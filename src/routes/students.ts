@@ -50,6 +50,112 @@ router.get('/', async (req, res) => {
 
 /**
  * @swagger
+ * /api/students/by-student-id/{studentId}:
+ *   get:
+ *     tags: [Students]
+ *     summary: Get student by student ID
+ *     description: |
+ *       Retrieve comprehensive information about a specific student using their unique studentId.
+ *       This endpoint is designed for external applications to fetch student data.
+ *       
+ *       **Returns:**
+ *       - Student personal information (name, email, phone, gender, date of birth)
+ *       - Academic details (school, department, year of study, semester)
+ *       - All course enrollments
+ *       - Fee payment records and balance
+ *       - Residence information (hostel and room assignment)
+ *       
+ *       **Use Cases:**
+ *       - Student portals and mobile apps
+ *       - Integration with external systems (library, hostel management, etc.)
+ *       - Student verification and authentication
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: student001
+ *         description: Unique student identifier (e.g., student001, student002)
+ *     responses:
+ *       200:
+ *         description: Student details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/StudentDetail'
+ *             example:
+ *               id: 1
+ *               studentId: student001
+ *               firstName: John
+ *               lastName: Doe
+ *               email: john.doe@ueab.ac.ke
+ *               phone: +254712345678
+ *               gender: male
+ *               dateOfBirth: 2000-05-15
+ *               schoolId: 1
+ *               departmentId: 1
+ *               yearOfStudy: 3
+ *               semester: 1
+ *               enrollmentStatus: active
+ *               enrollments:
+ *                 - id: 1
+ *                   courseId: 101
+ *                   semester: 1
+ *                   academicYear: 2024-2025
+ *                   grade: A
+ *               fees:
+ *                 - id: 1
+ *                   semester: 1
+ *                   academicYear: 2024-2025
+ *                   amountBilled: 50000
+ *                   amountPaid: 30000
+ *                   dueDate: 2024-12-31
+ *               residence:
+ *                 id: 1
+ *                 studentId: 1
+ *                 residenceStatus: on-campus
+ *                 hostelId: 1
+ *                 roomId: 101
+ *                 bedNumber: A1
+ *               balance: 20000
+ *       404:
+ *         description: Student not found with the provided studentId
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Student not found
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: Internal server error
+ */
+router.get('/by-student-id/:studentId', async (req, res) => {
+  try {
+    const studentId = req.params.studentId;
+    const [student] = await db.select().from(tables.students).where(eq(tables.students.studentId, studentId));
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    
+    const enrollments = await db.select().from(tables.enrollments).where(eq(tables.enrollments.studentId, student.id));
+    const fees = await db.select().from(tables.fees).where(eq(tables.fees.studentId, student.id));
+    const [residence] = await db.select().from(tables.residences).where(eq(tables.residences.studentId, student.id));
+    const balance = fees.reduce((acc: number, f: any) => acc + (Number(f.amountBilled) - Number(f.amountPaid)), 0);
+    
+    res.json({ ...student, enrollments, fees, residence, balance });
+  } catch (error) {
+    console.error('Error fetching student by studentId:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
  * /api/students/{id}:
  *   get:
  *     tags: [Students]

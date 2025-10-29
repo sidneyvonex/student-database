@@ -146,7 +146,7 @@ async function main() {
     { name: 'New Men Dorm', gender: 'male', totalRooms: 50, location: 'East Campus' },
     { name: 'Old Men Dorm', gender: 'male', totalRooms: 40, location: 'Main Campus' }
   ];
-  
+
   const ladiesHostels = [
     { name: 'Box Ladies Hostel', gender: 'female', totalRooms: 45, location: 'West Campus' },
     { name: 'Annex Ladies Hostel', gender: 'female', totalRooms: 35, location: 'North Campus' },
@@ -154,7 +154,7 @@ async function main() {
   ];
 
   const hostelIds: Record<string, number> = {};
-  
+
   for (const h of [...menHostels, ...ladiesHostels]) {
     const warden = await db.insert(tables.staff).values({
       staffId: `warden${Object.keys(hostelIds).length + 1}`,
@@ -171,25 +171,25 @@ async function main() {
       location: h.location,
       warden: warden[0].id
     }).returning({ id: tables.hostels.id });
-    
+
     hostelIds[h.name] = hostel[0].id;
   }
 
   // Create Rooms for each hostel
   console.log('Creating rooms...');
   const roomIds: number[] = [];
-  
+
   for (const [hostelName, hostelId] of Object.entries(hostelIds)) {
     const hostel = [...menHostels, ...ladiesHostels].find(h => h.name === hostelName)!;
     const floorsCount = Math.ceil(hostel.totalRooms / 10);
-    
+
     for (let floor = 1; floor <= floorsCount; floor++) {
       const roomsPerFloor = Math.min(10, hostel.totalRooms - (floor - 1) * 10);
-      
+
       for (let roomNum = 1; roomNum <= roomsPerFloor; roomNum++) {
         const roomNumber = `${floor}${String.fromCharCode(64 + Math.ceil(roomNum / 2))}${roomNum.toString().padStart(2, '0')}`;
         const capacity = 2; // All rooms are double occupancy
-        
+
         const room = await db.insert(tables.rooms).values({
           hostelId,
           roomNumber,
@@ -200,7 +200,7 @@ async function main() {
           amenities: 'Bathroom, Study Desk, Wardrobe, Bed',
           status: 'available'
         }).returning({ id: tables.rooms.id });
-        
+
         roomIds.push(room[0].id);
       }
     }
@@ -240,27 +240,27 @@ async function main() {
 
     // Allocate residence
     const isOnCampus = Math.random() > 0.2; // 80% on campus
-    
+
     if (isOnCampus) {
       // Find appropriate hostel based on gender
-      const appropriateHostels = gender === 'Male' 
+      const appropriateHostels = gender === 'Male'
         ? ['New Men Dorm', 'Old Men Dorm']
         : ['Box Ladies Hostel', 'Annex Ladies Hostel', 'Grace Ladies Hostel'];
-      
+
       const selectedHostelName = rand(appropriateHostels);
       const selectedHostelId = hostelIds[selectedHostelName];
-      
+
       // Find an available room in this hostel
       const availableRooms = await db.select()
         .from(tables.rooms)
         .where(eq(tables.rooms.hostelId, selectedHostelId));
-      
+
       const notFullRooms = availableRooms.filter(r => (r.currentOccupancy ?? 0) < (r.capacity ?? 2));
-      
+
       if (notFullRooms.length > 0) {
         const selectedRoom = rand(notFullRooms);
         const bedNumber = selectedRoom.currentOccupancy === 0 ? 'Bed A' : 'Bed B';
-        
+
         await db.insert(tables.residences).values({
           studentId: stu[0].id,
           residenceType: 'on-campus',
@@ -270,10 +270,10 @@ async function main() {
           offCampusAddress: null,
           offCampusArea: null
         });
-        
+
         // Update room occupancy
         await db.update(tables.rooms)
-          .set({ 
+          .set({
             currentOccupancy: (selectedRoom.currentOccupancy ?? 0) + 1,
             status: (selectedRoom.currentOccupancy ?? 0) + 1 >= (selectedRoom.capacity ?? 2) ? 'full' : 'available'
           })
@@ -347,7 +347,7 @@ async function main() {
       } else {
         daysOffset = randint(1, 5); // Random weekday
       }
-      
+
       const appointmentDate = new Date(today);
       appointmentDate.setDate(today.getDate() - (weekOffset * 7) - daysOffset);
       appointmentDate.setHours(apt.type === 'chapel' && apt.title.includes('Sunday') ? 10 : 14, 0, 0, 0);
@@ -368,7 +368,7 @@ async function main() {
       for (const stuId of studentIds) {
         const attendanceRate = apt.mandatory ? 0.8 : 0.4;
         const attended = Math.random() < attendanceRate;
-        
+
         await db.insert(tables.appointmentAttendance).values({
           appointmentId: appointment[0].id,
           studentId: stuId,

@@ -90,10 +90,10 @@ const options: swaggerJsdoc.Options = {
           properties: {
             id: { type: 'integer', example: 1 },
             title: { type: 'string', example: 'Sunday Chapel Service' },
-            appointmentType: { 
-              type: 'string', 
+            appointmentType: {
+              type: 'string',
               enum: ['chapel', 'assembly', 'wose_meeting', 'seminar', 'conference'],
-              example: 'chapel' 
+              example: 'chapel'
             },
             date: { type: 'string', format: 'date-time', example: '2025-10-27T10:00:00Z' },
             venue: { type: 'string', example: 'University Chapel' },
@@ -109,10 +109,10 @@ const options: swaggerJsdoc.Options = {
             id: { type: 'integer', example: 1 },
             appointmentId: { type: 'integer', example: 1 },
             studentId: { type: 'integer', example: 1 },
-            status: { 
-              type: 'string', 
+            status: {
+              type: 'string',
               enum: ['present', 'absent', 'excused'],
-              example: 'present' 
+              example: 'present'
             },
             markedBy: { type: 'integer', nullable: true, example: 5 },
             markedAt: { type: 'string', format: 'date-time', example: '2025-10-27T10:30:00Z' },
@@ -160,10 +160,10 @@ const options: swaggerJsdoc.Options = {
             currentOccupancy: { type: 'integer', example: 2 },
             roomType: { type: 'string', nullable: true, example: 'double' },
             amenities: { type: 'string', nullable: true, example: 'Bathroom, Study Desk, Wardrobe, Bed' },
-            status: { 
-              type: 'string', 
+            status: {
+              type: 'string',
               enum: ['available', 'full', 'maintenance'],
-              example: 'full' 
+              example: 'full'
             },
           },
         },
