@@ -15,7 +15,11 @@ const options: swaggerJsdoc.Options = {
     servers: [
       {
         url: 'http://localhost:4000',
-        description: 'Development server',
+        description: 'Local development server',
+      },
+      {
+        url: 'https://studedatademo.azurewebsites.net',
+        description: 'Production server (Azure)',
       },
     ],
     tags: [

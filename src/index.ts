@@ -16,11 +16,27 @@ import feeRoutes from './routes/fees';
 import academicRoutes from './routes/academic';
 
 const app = express();
-app.use(cors());
+
+// Enhanced CORS configuration for Swagger and external apps
+app.use(cors({
+  origin: '*', // Allow all origins for development (restrict in production)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// Swagger Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Swagger Documentation with custom options
+const swaggerOptions = {
+  explorer: true,
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    tryItOutEnabled: true
+  }
+};
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerOptions));
 
 // Root endpoint
 app.get('/', (_req, res) => {
