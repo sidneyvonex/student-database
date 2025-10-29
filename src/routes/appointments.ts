@@ -84,23 +84,70 @@ router.get('/attendance/summary', async (req, res) => {
  * /api/appointments/attendance/student/{studentId}:
  *   get:
  *     tags: [Appointments]
- *     summary: Get attendance summary for a student
+ *     summary: Get attendance summary for a student by student ID or student number
+ *     description: |
+ *       Retrieve attendance summary for a student using either:
+ *       - Numeric ID (internal database ID, e.g., 1, 2, 3)
+ *       - Student ID string (e.g., student001, student002)
+ *       
+ *       **Returns:**
+ *       - Total appointments attended
+ *       - Number of appointments attended, absent, and excused
+ *       - Overall attendance rate percentage
  *     parameters:
  *       - in: path
  *         name: studentId
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *         description: Student ID (e.g., student001) or numeric ID (e.g., 1)
+ *         example: student001
  *     responses:
  *       200:
- *         description: Student attendance summary with total and attended counts
+ *         description: Student attendance summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AttendanceSummary'
+ *             example:
+ *               studentId: student001
+ *               totalAppointments: 40
+ *               attended: 35
+ *               absent: 3
+ *               excused: 2
+ *               attendanceRate: 87.5
+ *       404:
+ *         description: Student not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/attendance/student/:studentId', async (req, res) => {
   try {
-    const studentId = Number(req.params.studentId);
+    const studentIdParam = req.params.studentId;
     
+    // First, try to find the student by studentId (string) or by numeric ID
+    let student;
+    
+    // Check if it's a numeric ID
+    if (!isNaN(Number(studentIdParam))) {
+      const numericId = Number(studentIdParam);
+      [student] = await db.select().from(tables.students).where(eq(tables.students.id, numericId));
+    } else {
+      // It's a string studentId like "student001"
+      [student] = await db.select().from(tables.students).where(eq(tables.students.studentId, studentIdParam));
+    }
+    
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    // Now get the attendance summary using the student's internal ID
     const summary = await db.select({
       studentId: tables.appointmentAttendance.studentId,
+      studentNumber: tables.students.studentId,
+      studentName: sql<string>`${tables.students.firstName} || ' ' || ${tables.students.lastName}`,
       totalAppointments: sql<number>`COUNT(*)`,
       attended: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)`,
       absent: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'absent' THEN 1 END)`,
@@ -108,12 +155,15 @@ router.get('/attendance/student/:studentId', async (req, res) => {
       attendanceRate: sql<number>`ROUND(COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)::numeric * 100 / COUNT(*), 2)`
     })
     .from(tables.appointmentAttendance)
-    .where(eq(tables.appointmentAttendance.studentId, studentId))
-    .groupBy(tables.appointmentAttendance.studentId);
+    .innerJoin(tables.students, eq(tables.appointmentAttendance.studentId, tables.students.id))
+    .where(eq(tables.appointmentAttendance.studentId, student.id))
+    .groupBy(tables.appointmentAttendance.studentId, tables.students.studentId, tables.students.firstName, tables.students.lastName);
     
     if (summary.length === 0) {
       return res.json({
-        studentId,
+        studentId: student.id,
+        studentNumber: student.studentId,
+        studentName: `${student.firstName} ${student.lastName}`,
         totalAppointments: 0,
         attended: 0,
         absent: 0,
