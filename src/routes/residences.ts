@@ -1,8 +1,8 @@
-import { Router } from 'express';
+import { Router, type Router as RouterType } from 'express';
 import { db, tables } from '../db/client';
 import { eq, and } from 'drizzle-orm';
 
-const router = Router();
+const router: RouterType = Router();
 
 // ============= RESIDENCE ALLOCATION =============
 
