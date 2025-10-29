@@ -30,14 +30,14 @@ router.get('/', async (req, res) => {
   try {
     const { type, mandatory } = req.query;
     const where = [] as any[];
-    
+
     if (type) where.push(eq(tables.appointments.appointmentType, type as string));
     if (mandatory !== undefined) where.push(eq(tables.appointments.mandatory, mandatory === 'true'));
-    
+
     const items = where.length
       ? await db.select().from(tables.appointments).where(and(...where))
       : await db.select().from(tables.appointments);
-    
+
     res.json(items);
   } catch (error) {
     console.error('Error fetching appointments:', error);
@@ -67,11 +67,11 @@ router.get('/attendance/summary', async (req, res) => {
       excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`,
       attendanceRate: sql<number>`ROUND(COALESCE(COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)::numeric * 100 / NULLIF(COUNT(${tables.appointmentAttendance.id}), 0), 0), 2)`
     })
-    .from(tables.students)
-    .leftJoin(tables.appointmentAttendance, eq(tables.students.id, tables.appointmentAttendance.studentId))
-    .groupBy(tables.students.id, tables.students.firstName, tables.students.lastName, tables.students.studentId)
-    .orderBy(tables.students.lastName, tables.students.firstName);
-    
+      .from(tables.students)
+      .leftJoin(tables.appointmentAttendance, eq(tables.students.id, tables.appointmentAttendance.studentId))
+      .groupBy(tables.students.id, tables.students.firstName, tables.students.lastName, tables.students.studentId)
+      .orderBy(tables.students.lastName, tables.students.firstName);
+
     res.json(summaries);
   } catch (error) {
     console.error('Error fetching attendance summaries:', error);
@@ -126,10 +126,10 @@ router.get('/attendance/summary', async (req, res) => {
 router.get('/attendance/student/:studentId', async (req, res) => {
   try {
     const studentIdParam = req.params.studentId;
-    
+
     // First, try to find the student by studentId (string) or by numeric ID
     let student;
-    
+
     // Check if it's a numeric ID
     if (!isNaN(Number(studentIdParam))) {
       const numericId = Number(studentIdParam);
@@ -138,11 +138,11 @@ router.get('/attendance/student/:studentId', async (req, res) => {
       // It's a string studentId like "student001"
       [student] = await db.select().from(tables.students).where(eq(tables.students.studentId, studentIdParam));
     }
-    
+
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
-    
+
     // Now get the attendance summary using the student's internal ID
     const summary = await db.select({
       studentId: tables.appointmentAttendance.studentId,
@@ -154,11 +154,11 @@ router.get('/attendance/student/:studentId', async (req, res) => {
       excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`,
       attendanceRate: sql<number>`ROUND(COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)::numeric * 100 / COUNT(*), 2)`
     })
-    .from(tables.appointmentAttendance)
-    .innerJoin(tables.students, eq(tables.appointmentAttendance.studentId, tables.students.id))
-    .where(eq(tables.appointmentAttendance.studentId, student.id))
-    .groupBy(tables.appointmentAttendance.studentId, tables.students.studentId, tables.students.firstName, tables.students.lastName);
-    
+      .from(tables.appointmentAttendance)
+      .innerJoin(tables.students, eq(tables.appointmentAttendance.studentId, tables.students.id))
+      .where(eq(tables.appointmentAttendance.studentId, student.id))
+      .groupBy(tables.appointmentAttendance.studentId, tables.students.studentId, tables.students.firstName, tables.students.lastName);
+
     if (summary.length === 0) {
       return res.json({
         studentId: student.id,
@@ -171,7 +171,7 @@ router.get('/attendance/student/:studentId', async (req, res) => {
         attendanceRate: 0
       });
     }
-    
+
     res.json(summary[0]);
   } catch (error) {
     console.error('Error fetching student attendance summary:', error);
@@ -199,11 +199,11 @@ router.get('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const [record] = await db.select().from(tables.appointments).where(eq(tables.appointments.id, id));
-    
+
     if (!record) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    
+
     res.json(record);
   } catch (error) {
     console.error('Error fetching appointment:', error);
@@ -252,7 +252,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { title, appointmentType, date, venue, description, mandatory, createdBy } = req.body;
-    
+
     const [record] = await db.insert(tables.appointments).values({
       title,
       appointmentType,
@@ -262,7 +262,7 @@ router.post('/', async (req, res) => {
       mandatory: mandatory ?? true,
       createdBy
     }).returning();
-    
+
     res.status(201).json(record);
   } catch (error) {
     console.error('Error creating appointment:', error);
@@ -296,20 +296,20 @@ router.put('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const updates = req.body;
-    
+
     if (updates.date) {
       updates.date = new Date(updates.date);
     }
-    
+
     const [record] = await db.update(tables.appointments)
       .set(updates)
       .where(eq(tables.appointments.id, id))
       .returning();
-    
+
     if (!record) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    
+
     res.json(record);
   } catch (error) {
     console.error('Error updating appointment:', error);
@@ -336,18 +336,18 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    
+
     // Delete attendance records first
     await db.delete(tables.appointmentAttendance).where(eq(tables.appointmentAttendance.appointmentId, id));
-    
+
     const [record] = await db.delete(tables.appointments)
       .where(eq(tables.appointments.id, id))
       .returning();
-    
+
     if (!record) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    
+
     res.json({ message: 'Appointment deleted successfully' });
   } catch (error) {
     console.error('Error deleting appointment:', error);
@@ -376,7 +376,7 @@ router.delete('/:id', async (req, res) => {
 router.get('/:id/attendance', async (req, res) => {
   try {
     const appointmentId = Number(req.params.id);
-    
+
     const records = await db.select({
       id: tables.appointmentAttendance.id,
       studentId: tables.appointmentAttendance.studentId,
@@ -385,10 +385,10 @@ router.get('/:id/attendance', async (req, res) => {
       notes: tables.appointmentAttendance.notes,
       markedAt: tables.appointmentAttendance.markedAt
     })
-    .from(tables.appointmentAttendance)
-    .leftJoin(tables.students, eq(tables.appointmentAttendance.studentId, tables.students.id))
-    .where(eq(tables.appointmentAttendance.appointmentId, appointmentId));
-    
+      .from(tables.appointmentAttendance)
+      .leftJoin(tables.students, eq(tables.appointmentAttendance.studentId, tables.students.id))
+      .where(eq(tables.appointmentAttendance.appointmentId, appointmentId));
+
     res.json(records);
   } catch (error) {
     console.error('Error fetching appointment attendance:', error);
@@ -436,7 +436,7 @@ router.post('/:id/attendance', async (req, res) => {
   try {
     const appointmentId = Number(req.params.id);
     const { studentId, status, markedBy, notes } = req.body;
-    
+
     const [record] = await db.insert(tables.appointmentAttendance).values({
       appointmentId,
       studentId,
@@ -444,7 +444,7 @@ router.post('/:id/attendance', async (req, res) => {
       markedBy,
       notes
     }).returning();
-    
+
     res.status(201).json(record);
   } catch (error) {
     console.error('Error marking attendance:', error);

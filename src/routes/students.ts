@@ -141,12 +141,12 @@ router.get('/by-student-id/:studentId', async (req, res) => {
     const studentId = req.params.studentId;
     const [student] = await db.select().from(tables.students).where(eq(tables.students.studentId, studentId));
     if (!student) return res.status(404).json({ error: 'Student not found' });
-    
+
     const enrollments = await db.select().from(tables.enrollments).where(eq(tables.enrollments.studentId, student.id));
     const fees = await db.select().from(tables.fees).where(eq(tables.fees.studentId, student.id));
     const [residence] = await db.select().from(tables.residences).where(eq(tables.residences.studentId, student.id));
     const balance = fees.reduce((acc: number, f: any) => acc + (Number(f.amountBilled) - Number(f.amountPaid)), 0);
-    
+
     res.json({ ...student, enrollments, fees, residence, balance });
   } catch (error) {
     console.error('Error fetching student by studentId:', error);
@@ -187,12 +187,12 @@ router.get('/:id', async (req, res) => {
     const id = Number(req.params.id);
     const [student] = await db.select().from(tables.students).where(eq(tables.students.id, id));
     if (!student) return res.status(404).json({ error: 'Student not found' });
-    
+
     const enrollments = await db.select().from(tables.enrollments).where(eq(tables.enrollments.studentId, id));
     const fees = await db.select().from(tables.fees).where(eq(tables.fees.studentId, id));
     const [residence] = await db.select().from(tables.residences).where(eq(tables.residences.studentId, id));
     const balance = fees.reduce((acc: number, f: any) => acc + (Number(f.amountBilled) - Number(f.amountPaid)), 0);
-    
+
     res.json({ ...student, enrollments, fees, residence, balance });
   } catch (error) {
     console.error('Error fetching student:', error);
@@ -258,7 +258,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { studentId, firstName, lastName, email, gender, dob, phone, address, schoolId, departmentId, yearOfStudy, yearJoined, workStudy, currentSemester } = req.body;
-    
+
     if (!studentId || !firstName || !lastName || !email) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -315,7 +315,7 @@ router.put('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const updateData = req.body;
-    
+
     const [updated] = await db.update(tables.students)
       .set(updateData)
       .where(eq(tables.students.id, id))
@@ -353,7 +353,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    
+
     const [deleted] = await db.delete(tables.students)
       .where(eq(tables.students.id, id))
       .returning();
