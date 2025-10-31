@@ -318,16 +318,11 @@ async function main() {
   // Create Appointments (University Events)
   console.log('Creating appointments...');
   const appointmentTypes = [
-    { title: 'Sunday Chapel Service', type: 'chapel', venue: 'University Chapel', mandatory: true },
-    { title: 'Wednesday Chapel Service', type: 'chapel', venue: 'University Chapel', mandatory: true },
-    { title: 'WOSE Meeting - Week 1', type: 'wose_meeting', venue: 'WOSE Hall', mandatory: true },
-    { title: 'WOSE Meeting - Week 2', type: 'wose_meeting', venue: 'WOSE Hall', mandatory: true },
-    { title: 'WOSE Meeting - Week 3', type: 'wose_meeting', venue: 'WOSE Hall', mandatory: true },
-    { title: 'WOSE Meeting - Week 4', type: 'wose_meeting', venue: 'WOSE Hall', mandatory: true },
-    { title: 'General Assembly', type: 'assembly', venue: 'Main Auditorium', mandatory: true },
-    { title: 'Academic Seminar: Study Skills', type: 'seminar', venue: 'Lecture Hall A', mandatory: false },
-    { title: 'Health Talk: Mental Wellness', type: 'seminar', venue: 'Lecture Hall B', mandatory: false },
-    { title: 'Career Conference', type: 'conference', venue: 'Conference Center', mandatory: false }
+    { title: 'Wednesday Evening Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
+    { title: 'Friday Evening Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
+    { title: 'Saturday Morning Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
+    { title: 'Saturday Evening Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
+    { title: 'Tuesday Assembly', type: 'assembly', venue: rand(['Auditorium', 'Amphitheatre', 'Baraton Union Church(BUC)']), mandatory: true },
   ];
 
   const creatorId = lecturers[0]; // Use first lecturer as creator
@@ -338,19 +333,26 @@ async function main() {
   for (let weekOffset = 3; weekOffset >= 0; weekOffset--) {
     for (const apt of appointmentTypes) {
       let daysOffset = 0;
-      if (apt.type === 'chapel') {
-        daysOffset = apt.title.includes('Sunday') ? 0 : 3; // Sunday or Wednesday
-      } else if (apt.type === 'wose_meeting') {
-        daysOffset = 5; // Friday
+      if (apt.type === 'church') {
+        if (apt.title.includes('Wednesday')) daysOffset = 3; // Wednesday
+        else if (apt.title.includes('Friday')) daysOffset = 5; // Friday
+        else if (apt.title.includes('Saturday Morning')) daysOffset = 6; // Saturday
+        else if (apt.title.includes('Saturday Evening')) daysOffset = 6; // Saturday
       } else if (apt.type === 'assembly') {
-        daysOffset = 1; // Monday
-      } else {
-        daysOffset = randint(1, 5); // Random weekday
+        daysOffset = 2; // Tuesday
       }
 
       const appointmentDate = new Date(today);
-      appointmentDate.setDate(today.getDate() - (weekOffset * 7) - daysOffset);
-      appointmentDate.setHours(apt.type === 'chapel' && apt.title.includes('Sunday') ? 10 : 14, 0, 0, 0);
+      appointmentDate.setDate(today.getDate() - (weekOffset * 7) - (7 - daysOffset));
+      
+      // Set appropriate times
+      if (apt.type === 'church' && apt.title.includes('Morning')) {
+        appointmentDate.setHours(9, 0, 0, 0); // Saturday 9am
+      } else if (apt.type === 'church' && apt.title.includes('Evening')) {
+        appointmentDate.setHours(18, 0, 0, 0); // Evening services at 6pm
+      } else {
+        appointmentDate.setHours(14, 0, 0, 0); // Assembly at 2pm
+      }
 
       const appointment = await db.insert(tables.appointments).values({
         title: apt.title,

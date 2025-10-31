@@ -97,10 +97,10 @@ export const roomBookings = pgTable("room_bookings", {
 
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
-  title: text("title").notNull(), // e.g., "Chapel Service", "Assembly", "WOSE Meeting"
-  appointmentType: text("appointment_type").notNull(), // chapel, assembly, wose_meeting, seminar, conference
+  title: text("title").notNull(), // e.g., "Church Service", "Assembly"
+  appointmentType: text("appointment_type").notNull(), // church, assembly
   date: timestamp("date").notNull(),
-  venue: text("venue"), // e.g., "Main Auditorium", "Chapel"
+  venue: text("venue"), // e.g., "Baraton Union Church(BUC)", "Auditorium", "Amphitheatre"
   description: text("description"),
   mandatory: boolean("mandatory").notNull().default(true),
   createdBy: integer("created_by"), // staff id that created appointment
