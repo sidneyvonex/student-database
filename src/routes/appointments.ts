@@ -431,7 +431,7 @@ router.get('/attendance/dashboard', async (req, res) => {
         present: Number(churchData.totalPresent),
         absent: Number(churchData.totalAbsent),
         excused: Number(churchData.totalExcused),
-        attendanceRate: Number(churchData.totalAttendanceRecords) > 0 
+        attendanceRate: Number(churchData.totalAttendanceRecords) > 0
           ? Number(((Number(churchData.totalPresent) / Number(churchData.totalAttendanceRecords)) * 100).toFixed(2))
           : 0
       },
@@ -441,7 +441,7 @@ router.get('/attendance/dashboard', async (req, res) => {
         present: Number(assemblyData.totalPresent),
         absent: Number(assemblyData.totalAbsent),
         excused: Number(assemblyData.totalExcused),
-        attendanceRate: Number(assemblyData.totalAttendanceRecords) > 0 
+        attendanceRate: Number(assemblyData.totalAttendanceRecords) > 0
           ? Number(((Number(assemblyData.totalPresent) / Number(assemblyData.totalAttendanceRecords)) * 100).toFixed(2))
           : 0
       }
@@ -537,15 +537,15 @@ router.post('/', async (req, res) => {
 
     // Validate appointment type
     if (!['church', 'assembly'].includes(appointmentType)) {
-      return res.status(400).json({ 
-        error: 'Invalid appointment type. Only "church" and "assembly" are allowed.' 
+      return res.status(400).json({
+        error: 'Invalid appointment type. Only "church" and "assembly" are allowed.'
       });
     }
 
     // Validate required fields
     if (!title || !appointmentType || !date || !venue) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: title, appointmentType, date, and venue are required.' 
+      return res.status(400).json({
+        error: 'Missing required fields: title, appointmentType, date, and venue are required.'
       });
     }
 

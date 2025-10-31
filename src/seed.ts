@@ -344,7 +344,7 @@ async function main() {
 
       const appointmentDate = new Date(today);
       appointmentDate.setDate(today.getDate() - (weekOffset * 7) - (7 - daysOffset));
-      
+
       // Set appropriate times
       if (apt.type === 'church' && apt.title.includes('Morning')) {
         appointmentDate.setHours(9, 0, 0, 0); // Saturday 9am
