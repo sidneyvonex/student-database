@@ -188,7 +188,10 @@ async function main() {
 
       for (let roomNum = 1; roomNum <= roomsPerFloor; roomNum++) {
         const roomNumber = `${floor}${String.fromCharCode(64 + Math.ceil(roomNum / 2))}${roomNum.toString().padStart(2, '0')}`;
-        const capacity = 2; // All rooms are double occupancy
+        // Vary capacity: 25% single, 30% double, 30% triple, 15% quad
+        const capacityRand = Math.random();
+        const capacity = capacityRand < 0.25 ? 1 : capacityRand < 0.55 ? 2 : capacityRand < 0.85 ? 3 : 4;
+        const roomType = capacity === 1 ? 'single' : capacity === 2 ? 'double' : capacity === 3 ? 'triple' : 'quad';
 
         const room = await db.insert(tables.rooms).values({
           hostelId,
@@ -196,7 +199,7 @@ async function main() {
           floor,
           capacity,
           currentOccupancy: 0,
-          roomType: 'double',
+          roomType,
           amenities: 'Bathroom, Study Desk, Wardrobe, Bed',
           status: 'available'
         }).returning({ id: tables.rooms.id });
@@ -255,11 +258,12 @@ async function main() {
         .from(tables.rooms)
         .where(eq(tables.rooms.hostelId, selectedHostelId));
 
-      const notFullRooms = availableRooms.filter(r => (r.currentOccupancy ?? 0) < (r.capacity ?? 2));
+      const notFullRooms = availableRooms.filter(r => (r.currentOccupancy ?? 0) < (r.capacity ?? 4));
 
       if (notFullRooms.length > 0) {
         const selectedRoom = rand(notFullRooms);
-        const bedNumber = selectedRoom.currentOccupancy === 0 ? 'Bed A' : 'Bed B';
+        const bedNames = ['Bed A', 'Bed B', 'Bed C', 'Bed D'];
+        const bedNumber = bedNames[selectedRoom.currentOccupancy ?? 0];
 
         await db.insert(tables.residences).values({
           studentId: stu[0].id,
@@ -267,7 +271,8 @@ async function main() {
           hostelId: selectedHostelId,
           roomId: selectedRoom.id,
           bedNumber,
-          offCampusAddress: null,
+          offCampusHostelName: null,
+          offCampusRoomNumber: null,
           offCampusArea: null
         });
 
@@ -275,20 +280,33 @@ async function main() {
         await db.update(tables.rooms)
           .set({
             currentOccupancy: (selectedRoom.currentOccupancy ?? 0) + 1,
-            status: (selectedRoom.currentOccupancy ?? 0) + 1 >= (selectedRoom.capacity ?? 2) ? 'full' : 'available'
+            status: (selectedRoom.currentOccupancy ?? 0) + 1 >= (selectedRoom.capacity ?? 4) ? 'full' : 'available'
           })
           .where(eq(tables.rooms.id, selectedRoom.id));
       }
     } else {
-      // Off-campus
+      // Off-campus - with proper area names, hostel names, and room numbers
+      const offCampusAreas = ['Chemundu', 'Kapsabet', 'Tilalwa', 'Chepterit', 'Kimondi', 'Baracee', 'Kapsisiwa', 'Laviva'];
+      const offCampusHostels = ['Richmond Apartments', 'Soweto Hostels', 'Twin Towers', 'Spring Valley Hostels', 'YoungMan Hostels', 'Grace Hostels', 'Paradise Inn', 'Student Plaza'];
+      const roomNumberFormats = [
+        () => `${String.fromCharCode(65 + randint(0, 5))}${randint(1, 20)}`, // A1, B15, etc.
+        () => `Room ${randint(1, 50)}`, // Room 1, Room 25, etc.
+        () => `${randint(1, 5)}${String.fromCharCode(65 + randint(0, 10))}`, // 1A, 3F, etc.
+      ];
+
+      const selectedArea = rand(offCampusAreas);
+      const selectedHostel = rand(offCampusHostels);
+      const roomNumber = rand(roomNumberFormats)();
+
       await db.insert(tables.residences).values({
         studentId: stu[0].id,
         residenceType: 'off-campus',
         hostelId: null,
         roomId: null,
         bedNumber: null,
-        offCampusAddress: `Plot ${randint(1, 200)}, ${rand(['Kapsoya', 'Pioneer', 'Elgon View', 'West Indies'])} Estate, Eldoret`,
-        offCampusArea: rand(['Kapsoya', 'Pioneer', 'Elgon View', 'West Indies'])
+        offCampusHostelName: selectedHostel,
+        offCampusRoomNumber: roomNumber,
+        offCampusArea: selectedArea
       });
     }
 

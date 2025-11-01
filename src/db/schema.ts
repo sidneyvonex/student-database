@@ -60,11 +60,11 @@ export const hostels = pgTable("hostels", {
 export const rooms = pgTable("rooms", {
   id: serial("id").primaryKey(),
   hostelId: integer("hostel_id").notNull(), // FK to hostels
-  roomNumber: text("room_number").notNull(), // e.g., "1A01", "2B05"
+  roomNumber: text("room_number").notNull(), // e.g., "1A01", "2B05", "A1", "Room 1"
   floor: integer("floor"),
-  capacity: integer("capacity").notNull().default(2), // How many students can fit
+  capacity: integer("capacity").notNull().default(4), // How many beds/students can fit (1-4)
   currentOccupancy: integer("current_occupancy").notNull().default(0), // How many currently assigned
-  roomType: text("room_type"), // single, double, triple
+  roomType: text("room_type"), // single, double, triple, quad
   amenities: text("amenities"), // e.g., "Bathroom, Study Desk, Wardrobe"
   status: text("status").notNull().default("available"), // available, full, maintenance
 });
@@ -75,9 +75,10 @@ export const residences = pgTable("residences", {
   residenceType: text("residence_type").notNull(), // 'on-campus' or 'off-campus'
   hostelId: integer("hostel_id"), // FK to hostels (if on-campus)
   roomId: integer("room_id"), // FK to rooms (if on-campus)
-  bedNumber: text("bed_number"), // e.g., "Bed A", "Bed B"
-  offCampusAddress: text("off_campus_address"), // if off-campus
-  offCampusArea: text("off_campus_area"), // Chemundu, Tilalwa, Baracee, Kapasbet
+  bedNumber: text("bed_number"), // e.g., "Bed A", "Bed B", "Bed C", "Bed D" (for on-campus)
+  offCampusHostelName: text("off_campus_hostel_name"), // e.g., "Richmond Apartments", "Soweto Hostels" (if off-campus)
+  offCampusRoomNumber: text("off_campus_room_number"), // e.g., "A1", "Room 1", "B12" (if off-campus)
+  offCampusArea: text("off_campus_area"), // Chemundu, Kapsabet, Tilalwa, Chepterit, Kimondi, Baracee, Kapsisiwa, Laviva
   allocated: boolean("allocated").notNull().default(true),
   allocatedAt: timestamp("allocated_at").defaultNow(),
 });
@@ -85,9 +86,14 @@ export const residences = pgTable("residences", {
 export const roomBookings = pgTable("room_bookings", {
   id: serial("id").primaryKey(),
   studentId: integer("student_id").notNull(),
-  requestedHostel: text("requested_hostel"),
-  requestedRoom: text("requested_room"),
-  requestedArea: text("requested_area"),
+  requestType: text("request_type").notNull().default('new'), // 'new' or 'transfer'
+  currentRoomId: integer("current_room_id"), // For transfers: current room
+  requestedHostelId: integer("requested_hostel_id"), // For on-campus
+  requestedRoomId: integer("requested_room_id"), // For on-campus
+  requestedBed: text("requested_bed"), // Bed A, B, C, or D
+  requestedOffCampusHostel: text("requested_off_campus_hostel"), // For off-campus
+  requestedOffCampusRoom: text("requested_off_campus_room"), // For off-campus
+  requestedOffCampusArea: text("requested_off_campus_area"), // For off-campus
   status: text("status").notNull().default('pending'), // pending, approved, rejected
   requestedAt: timestamp("requested_at").defaultNow(),
   approvedBy: integer("approved_by"), // staff id
