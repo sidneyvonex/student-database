@@ -454,6 +454,778 @@ router.get('/attendance/dashboard', async (req, res) => {
   }
 });
 
+// ============= APPOINTMENT CRUD - moved to end to avoid route conflicts =============
+
+// ============= ADDITIONAL APPOINTMENT ENDPOINTS =============
+
+/**
+ * @swagger
+ * /api/appointments/upcoming:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get upcoming appointments
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 7
+ *         description: Number of days to look ahead
+ *     responses:
+ *       200:
+ *         description: List of upcoming appointments
+ */
+router.get('/upcoming', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days as string) || 7;
+    const today = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(today.getDate() + days);
+
+    const appointments = await db
+      .select()
+      .from(tables.appointments)
+      .where(
+        and(
+          sql`${tables.appointments.date} >= ${today.toISOString()}`,
+          sql`${tables.appointments.date} <= ${futureDate.toISOString()}`
+        )
+      )
+      .orderBy(tables.appointments.date);
+
+    res.json(appointments);
+  } catch (error) {
+    console.error('Error fetching upcoming appointments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/past:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get past appointments
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 30
+ *         description: Number of days to look back
+ *     responses:
+ *       200:
+ *         description: List of past appointments
+ */
+router.get('/past', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days as string) || 30;
+    const today = new Date();
+    const pastDate = new Date();
+    pastDate.setDate(today.getDate() - days);
+
+    const appointments = await db
+      .select()
+      .from(tables.appointments)
+      .where(
+        and(
+          sql`${tables.appointments.date} >= ${pastDate.toISOString()}`,
+          sql`${tables.appointments.date} < ${today.toISOString()}`
+        )
+      )
+      .orderBy(sql`${tables.appointments.date} DESC`);
+
+    res.json(appointments);
+  } catch (error) {
+    console.error('Error fetching past appointments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/attendance/bulk:
+ *   post:
+ *     tags: [Appointments]
+ *     summary: Mark attendance for multiple students
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               appointmentId:
+ *                 type: integer
+ *               attendanceRecords:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     studentId:
+ *                       type: integer
+ *                     status:
+ *                       type: string
+ *                       enum: [present, absent, excused]
+ *                     notes:
+ *                       type: string
+ *     responses:
+ *       201:
+ *         description: Attendance marked successfully
+ */
+router.post('/attendance/bulk', async (req, res) => {
+  try {
+    const { appointmentId, attendanceRecords, markedBy } = req.body;
+
+    if (!appointmentId || !attendanceRecords || !Array.isArray(attendanceRecords)) {
+      return res.status(400).json({ error: 'Invalid request body' });
+    }
+
+    const results = [];
+    for (const record of attendanceRecords) {
+      const [attendance] = await db
+        .insert(tables.appointmentAttendance)
+        .values({
+          appointmentId: appointmentId,
+          studentId: record.studentId,
+          status: record.status,
+          markedBy: markedBy || null,
+          notes: record.notes || null
+        })
+        .onConflictDoUpdate({
+          target: [tables.appointmentAttendance.appointmentId, tables.appointmentAttendance.studentId],
+          set: {
+            status: record.status,
+            markedBy: markedBy || null,
+            notes: record.notes || null
+          }
+        })
+        .returning();
+
+      results.push(attendance);
+    }
+
+    res.status(201).json({
+      message: 'Bulk attendance marked successfully',
+      count: results.length,
+      records: results
+    });
+  } catch (error) {
+    console.error('Error marking bulk attendance:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/attendance/stats:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get attendance statistics by date range
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Attendance statistics
+ */
+router.get('/attendance/stats', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const whereConditions = [];
+    if (startDate) {
+      whereConditions.push(sql`${tables.appointments.date} >= ${new Date(startDate as string)}`);
+    }
+    if (endDate) {
+      whereConditions.push(sql`${tables.appointments.date} <= ${new Date(endDate as string)}`);
+    }
+
+    const stats = await db
+      .select({
+        appointmentType: tables.appointments.appointmentType,
+        totalAppointments: sql<number>`COUNT(DISTINCT ${tables.appointments.id})`,
+        totalRecords: sql<number>`COUNT(${tables.appointmentAttendance.id})`,
+        present: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)`,
+        absent: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'absent' THEN 1 END)`,
+        excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`
+      })
+      .from(tables.appointments)
+      .leftJoin(
+        tables.appointmentAttendance,
+        eq(tables.appointments.id, tables.appointmentAttendance.appointmentId)
+      )
+      .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+      .groupBy(tables.appointments.appointmentType);
+
+    const result = stats.map(stat => ({
+      type: stat.appointmentType,
+      totalAppointments: Number(stat.totalAppointments),
+      totalRecords: Number(stat.totalRecords),
+      present: Number(stat.present),
+      absent: Number(stat.absent),
+      excused: Number(stat.excused),
+      attendanceRate: Number(stat.totalRecords) > 0
+        ? Number(((Number(stat.present) / Number(stat.totalRecords)) * 100).toFixed(2))
+        : 0
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching attendance stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/student/{studentId}/summary:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get comprehensive attendance summary for student dashboard
+ *     description: Returns a single object with totals, breakdown by type, and upcoming count
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Student ID (e.g., student001)
+ *     responses:
+ *       200:
+ *         description: Complete student summary for dashboard
+ *         content:
+ *           application/json:
+ *             example:
+ *               studentId: "student002"
+ *               studentName: "Brian Wanjiru"
+ *               totalAppointments: 40
+ *               attended: 35
+ *               absent: 3
+ *               excused: 2
+ *               attendanceRate: 87.5
+ *               breakdown:
+ *                 church:
+ *                   total: 25
+ *                   attended: 23
+ *                   absent: 1
+ *                   excused: 1
+ *                   attendanceRate: 92.0
+ *                 assembly:
+ *                   total: 15
+ *                   attended: 12
+ *                   absent: 2
+ *                   excused: 1
+ *                   attendanceRate: 80.0
+ *               upcomingCount: 3
+ */
+router.get('/student/:studentId/summary', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // Find student
+    console.log('[summary] finding student', studentId);
+    console.time('[summary] find student');
+    const [student] = await db
+      .select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId))
+      .limit(1);
+    console.timeEnd('[summary] find student');
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Get overall stats
+    console.log('[summary] fetching overall stats for student id', student.id);
+    console.time('[summary] overall stats');
+    const [overallStats] = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        attended: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)`,
+        absent: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'absent' THEN 1 END)`,
+        excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`
+      })
+      .from(tables.appointmentAttendance)
+      .where(eq(tables.appointmentAttendance.studentId, student.id));
+    console.timeEnd('[summary] overall stats');
+
+    // Get church stats
+    console.log('[summary] fetching church stats');
+    console.time('[summary] church stats');
+    const [churchStats] = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        attended: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)`,
+        absent: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'absent' THEN 1 END)`,
+        excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`
+      })
+      .from(tables.appointmentAttendance)
+      .innerJoin(tables.appointments, eq(tables.appointmentAttendance.appointmentId, tables.appointments.id))
+      .where(
+        and(
+          eq(tables.appointmentAttendance.studentId, student.id),
+          eq(tables.appointments.appointmentType, 'church')
+        )
+      );
+    console.timeEnd('[summary] church stats');
+
+    // Get assembly stats
+    console.log('[summary] fetching assembly stats');
+    console.time('[summary] assembly stats');
+    const [assemblyStats] = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        attended: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)`,
+        absent: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'absent' THEN 1 END)`,
+        excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`
+      })
+      .from(tables.appointmentAttendance)
+      .innerJoin(tables.appointments, eq(tables.appointmentAttendance.appointmentId, tables.appointments.id))
+      .where(
+        and(
+          eq(tables.appointmentAttendance.studentId, student.id),
+          eq(tables.appointments.appointmentType, 'assembly')
+        )
+      );
+    console.timeEnd('[summary] assembly stats');
+
+    // Get upcoming count
+    console.log('[summary] fetching upcoming count');
+    console.time('[summary] upcoming count');
+    const today = new Date();
+    const [upcomingResult] = await db
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(tables.appointments)
+      .where(sql`${tables.appointments.date} >= ${today.toISOString()}`);
+    console.timeEnd('[summary] upcoming count');
+
+    const summary = {
+      studentId: student.studentId,
+      studentName: `${student.firstName} ${student.lastName}`,
+      totalAppointments: Number(overallStats.total),
+      attended: Number(overallStats.attended),
+      absent: Number(overallStats.absent),
+      excused: Number(overallStats.excused),
+      attendanceRate: Number(overallStats.total) > 0
+        ? Number(((Number(overallStats.attended) / Number(overallStats.total)) * 100).toFixed(2))
+        : 0,
+      breakdown: {
+        church: {
+          total: Number(churchStats.total),
+          attended: Number(churchStats.attended),
+          absent: Number(churchStats.absent),
+          excused: Number(churchStats.excused),
+          attendanceRate: Number(churchStats.total) > 0
+            ? Number(((Number(churchStats.attended) / Number(churchStats.total)) * 100).toFixed(2))
+            : 0
+        },
+        assembly: {
+          total: Number(assemblyStats.total),
+          attended: Number(assemblyStats.attended),
+          absent: Number(assemblyStats.absent),
+          excused: Number(assemblyStats.excused),
+          attendanceRate: Number(assemblyStats.total) > 0
+            ? Number(((Number(assemblyStats.attended) / Number(assemblyStats.total)) * 100).toFixed(2))
+            : 0
+        }
+      },
+      upcomingCount: Number(upcomingResult.count)
+    };
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Error fetching student summary:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/student/{studentId}/calendar:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get calendar-friendly appointments for date range
+ *     description: Returns appointments grouped by date for calendar display
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 30
+ *         description: Number of days to look ahead
+ *     responses:
+ *       200:
+ *         description: Appointments grouped by date
+ */
+router.get('/student/:studentId/calendar', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const days = parseInt(req.query.days as string) || 30;
+
+    // Find student
+    const [student] = await db
+      .select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId))
+      .limit(1);
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const today = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(today.getDate() + days);
+
+    // Get appointments with attendance status
+    const appointments = await db
+      .select({
+        id: tables.appointments.id,
+        title: tables.appointments.title,
+        date: tables.appointments.date,
+        venue: tables.appointments.venue,
+        appointmentType: tables.appointments.appointmentType,
+        mandatory: tables.appointments.mandatory,
+        description: tables.appointments.description,
+        attendanceStatus: tables.appointmentAttendance.status,
+        attendanceNotes: tables.appointmentAttendance.notes
+      })
+      .from(tables.appointments)
+      .leftJoin(
+        tables.appointmentAttendance,
+        and(
+          eq(tables.appointments.id, tables.appointmentAttendance.appointmentId),
+          eq(tables.appointmentAttendance.studentId, student.id)
+        )
+      )
+      .where(
+        and(
+          sql`${tables.appointments.date} >= ${today.toISOString()}`,
+          sql`${tables.appointments.date} <= ${futureDate.toISOString()}`
+        )
+      )
+      .orderBy(tables.appointments.date);
+
+    // Group by date
+    const groupedByDate = new Map<string, any[]>();
+
+    for (const apt of appointments) {
+      const dateKey = new Date(apt.date).toISOString().split('T')[0];
+      if (!groupedByDate.has(dateKey)) {
+        groupedByDate.set(dateKey, []);
+      }
+      groupedByDate.get(dateKey)!.push({
+        id: apt.id,
+        title: apt.title,
+        date: new Date(apt.date).toISOString(),
+        venue: apt.venue,
+        appointmentType: apt.appointmentType,
+        mandatory: apt.mandatory,
+        description: apt.description,
+        attendanceStatus: apt.attendanceStatus || null,
+        attendanceNotes: apt.attendanceNotes || null
+      });
+    }
+
+    // Convert to array format
+    const result = Array.from(groupedByDate.entries()).map(([date, appointments]) => ({
+      date,
+      appointments
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching calendar appointments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/student/{studentId}/history:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get paginated attendance history
+ *     description: Returns past appointments with attendance records
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Paginated attendance history
+ */
+router.get('/student/:studentId/history', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100); // Max 100
+    const offset = (page - 1) * limit;
+
+    // Find student
+    const [student] = await db
+      .select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId))
+      .limit(1);
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const today = new Date();
+
+    // Get total count
+    const [countResult] = await db
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(tables.appointments)
+      .innerJoin(
+        tables.appointmentAttendance,
+        and(
+          eq(tables.appointments.id, tables.appointmentAttendance.appointmentId),
+          eq(tables.appointmentAttendance.studentId, student.id)
+        )
+      )
+      .where(sql`${tables.appointments.date} < ${today.toISOString()}`);
+
+    // Get paginated items
+    const items = await db
+      .select({
+        id: tables.appointments.id,
+        title: tables.appointments.title,
+        date: tables.appointments.date,
+        venue: tables.appointments.venue,
+        appointmentType: tables.appointments.appointmentType,
+        mandatory: tables.appointments.mandatory,
+        attendanceStatus: tables.appointmentAttendance.status,
+        attendanceNotes: tables.appointmentAttendance.notes,
+        markedAt: tables.appointmentAttendance.markedAt
+      })
+      .from(tables.appointments)
+      .innerJoin(
+        tables.appointmentAttendance,
+        and(
+          eq(tables.appointments.id, tables.appointmentAttendance.appointmentId),
+          eq(tables.appointmentAttendance.studentId, student.id)
+        )
+      )
+      .where(sql`${tables.appointments.date} < ${today.toISOString()}`)
+      .orderBy(sql`${tables.appointments.date} DESC`)
+      .limit(limit)
+      .offset(offset);
+
+    const result = {
+      page,
+      limit,
+      total: Number(countResult.count),
+      totalPages: Math.ceil(Number(countResult.count) / limit),
+      items: items.map(item => ({
+        id: item.id,
+        title: item.title,
+        date: new Date(item.date).toISOString(),
+        venue: item.venue,
+        appointmentType: item.appointmentType,
+        mandatory: item.mandatory,
+        attendanceStatus: item.attendanceStatus,
+        notes: item.attendanceNotes || null,
+        markedAt: item.markedAt ? new Date(item.markedAt).toISOString() : null
+      }))
+    };
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching attendance history:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/student/:studentId/upcoming:
+ *   get:
+ *     tags: [Appointments]
+ *     summary: Get upcoming appointments for a specific student
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of upcoming appointments for the student
+ */
+router.get('/student/:studentId/upcoming', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // Get student
+    const [student] = await db
+      .select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId))
+      .limit(1);
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const today = new Date();
+
+    const appointments = await db
+      .select({
+        id: tables.appointments.id,
+        title: tables.appointments.title,
+        appointmentType: tables.appointments.appointmentType,
+        date: tables.appointments.date,
+        venue: tables.appointments.venue,
+        description: tables.appointments.description,
+        mandatory: tables.appointments.mandatory,
+        attendanceStatus: tables.appointmentAttendance.status,
+        attendanceNotes: tables.appointmentAttendance.notes
+      })
+      .from(tables.appointments)
+      .leftJoin(
+        tables.appointmentAttendance,
+        and(
+          eq(tables.appointments.id, tables.appointmentAttendance.appointmentId),
+          eq(tables.appointmentAttendance.studentId, student.id)
+        )
+      )
+      .where(sql`${tables.appointments.date} >= ${today.toISOString()}`)
+      .orderBy(tables.appointments.date);
+
+    res.json(appointments);
+  } catch (error) {
+    console.error('Error fetching student upcoming appointments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/attendance/update/:id:
+ *   patch:
+ *     tags: [Appointments]
+ *     summary: Update attendance record
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [present, absent, excused]
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Attendance updated successfully
+ */
+router.patch('/attendance/update/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, notes, markedBy } = req.body;
+
+    const updateData: any = {};
+    if (status) updateData.status = status;
+    if (notes !== undefined) updateData.notes = notes;
+    if (markedBy) updateData.markedBy = markedBy;
+
+    const [updated] = await db
+      .update(tables.appointmentAttendance)
+      .set(updateData)
+      .where(eq(tables.appointmentAttendance.id, parseInt(id)))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error('Error updating attendance:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/appointments/attendance/delete/:id:
+ *   delete:
+ *     tags: [Appointments]
+ *     summary: Delete attendance record
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attendance deleted successfully
+ */
+router.delete('/attendance/delete/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [deleted] = await db
+      .delete(tables.appointmentAttendance)
+      .where(eq(tables.appointmentAttendance.id, parseInt(id)))
+      .returning();
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    res.json({ message: 'Attendance record deleted successfully', record: deleted });
+  } catch (error) {
+    console.error('Error deleting attendance:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============= APPOINTMENT CRUD (moved to end to avoid route conflict with /student/:studentId paths) =============
+
 /**
  * @swagger
  * /api/appointments/{id}:
@@ -651,7 +1423,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// ============= APPOINTMENT ATTENDANCE =============
+// ============= APPOINTMENT ATTENDANCE /:id (moved to end) =============
 
 /**
  * @swagger
@@ -744,389 +1516,6 @@ router.post('/:id/attendance', async (req, res) => {
     res.status(201).json(record);
   } catch (error) {
     console.error('Error marking attendance:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ============= ADDITIONAL APPOINTMENT ENDPOINTS =============
-
-/**
- * @swagger
- * /api/appointments/upcoming:
- *   get:
- *     tags: [Appointments]
- *     summary: Get upcoming appointments
- *     parameters:
- *       - in: query
- *         name: days
- *         schema:
- *           type: integer
- *           default: 7
- *         description: Number of days to look ahead
- *     responses:
- *       200:
- *         description: List of upcoming appointments
- */
-router.get('/upcoming', async (req, res) => {
-  try {
-    const days = parseInt(req.query.days as string) || 7;
-    const today = new Date();
-    const futureDate = new Date();
-    futureDate.setDate(today.getDate() + days);
-
-    const appointments = await db
-      .select()
-      .from(tables.appointments)
-      .where(
-        and(
-          sql`${tables.appointments.date} >= ${today}`,
-          sql`${tables.appointments.date} <= ${futureDate}`
-        )
-      )
-      .orderBy(tables.appointments.date);
-
-    res.json(appointments);
-  } catch (error) {
-    console.error('Error fetching upcoming appointments:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * @swagger
- * /api/appointments/past:
- *   get:
- *     tags: [Appointments]
- *     summary: Get past appointments
- *     parameters:
- *       - in: query
- *         name: days
- *         schema:
- *           type: integer
- *           default: 30
- *         description: Number of days to look back
- *     responses:
- *       200:
- *         description: List of past appointments
- */
-router.get('/past', async (req, res) => {
-  try {
-    const days = parseInt(req.query.days as string) || 30;
-    const today = new Date();
-    const pastDate = new Date();
-    pastDate.setDate(today.getDate() - days);
-
-    const appointments = await db
-      .select()
-      .from(tables.appointments)
-      .where(
-        and(
-          sql`${tables.appointments.date} >= ${pastDate}`,
-          sql`${tables.appointments.date} < ${today}`
-        )
-      )
-      .orderBy(sql`${tables.appointments.date} DESC`);
-
-    res.json(appointments);
-  } catch (error) {
-    console.error('Error fetching past appointments:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * @swagger
- * /api/appointments/attendance/bulk:
- *   post:
- *     tags: [Appointments]
- *     summary: Mark attendance for multiple students
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               appointmentId:
- *                 type: integer
- *               attendanceRecords:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     studentId:
- *                       type: integer
- *                     status:
- *                       type: string
- *                       enum: [present, absent, excused]
- *                     notes:
- *                       type: string
- *     responses:
- *       201:
- *         description: Attendance marked successfully
- */
-router.post('/attendance/bulk', async (req, res) => {
-  try {
-    const { appointmentId, attendanceRecords, markedBy } = req.body;
-
-    if (!appointmentId || !attendanceRecords || !Array.isArray(attendanceRecords)) {
-      return res.status(400).json({ error: 'Invalid request body' });
-    }
-
-    const results = [];
-    for (const record of attendanceRecords) {
-      const [attendance] = await db
-        .insert(tables.appointmentAttendance)
-        .values({
-          appointmentId: appointmentId,
-          studentId: record.studentId,
-          status: record.status,
-          markedBy: markedBy || null,
-          notes: record.notes || null
-        })
-        .onConflictDoUpdate({
-          target: [tables.appointmentAttendance.appointmentId, tables.appointmentAttendance.studentId],
-          set: {
-            status: record.status,
-            markedBy: markedBy || null,
-            notes: record.notes || null
-          }
-        })
-        .returning();
-
-      results.push(attendance);
-    }
-
-    res.status(201).json({
-      message: 'Bulk attendance marked successfully',
-      count: results.length,
-      records: results
-    });
-  } catch (error) {
-    console.error('Error marking bulk attendance:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * @swagger
- * /api/appointments/attendance/stats:
- *   get:
- *     tags: [Appointments]
- *     summary: Get attendance statistics by date range
- *     parameters:
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Attendance statistics
- */
-router.get('/attendance/stats', async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-
-    const whereConditions = [];
-    if (startDate) {
-      whereConditions.push(sql`${tables.appointments.date} >= ${new Date(startDate as string)}`);
-    }
-    if (endDate) {
-      whereConditions.push(sql`${tables.appointments.date} <= ${new Date(endDate as string)}`);
-    }
-
-    const stats = await db
-      .select({
-        appointmentType: tables.appointments.appointmentType,
-        totalAppointments: sql<number>`COUNT(DISTINCT ${tables.appointments.id})`,
-        totalRecords: sql<number>`COUNT(${tables.appointmentAttendance.id})`,
-        present: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'present' THEN 1 END)`,
-        absent: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'absent' THEN 1 END)`,
-        excused: sql<number>`COUNT(CASE WHEN ${tables.appointmentAttendance.status} = 'excused' THEN 1 END)`
-      })
-      .from(tables.appointments)
-      .leftJoin(
-        tables.appointmentAttendance,
-        eq(tables.appointments.id, tables.appointmentAttendance.appointmentId)
-      )
-      .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
-      .groupBy(tables.appointments.appointmentType);
-
-    const result = stats.map(stat => ({
-      type: stat.appointmentType,
-      totalAppointments: Number(stat.totalAppointments),
-      totalRecords: Number(stat.totalRecords),
-      present: Number(stat.present),
-      absent: Number(stat.absent),
-      excused: Number(stat.excused),
-      attendanceRate: Number(stat.totalRecords) > 0
-        ? Number(((Number(stat.present) / Number(stat.totalRecords)) * 100).toFixed(2))
-        : 0
-    }));
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error fetching attendance stats:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * @swagger
- * /api/appointments/student/:studentId/upcoming:
- *   get:
- *     tags: [Appointments]
- *     summary: Get upcoming appointments for a specific student
- *     parameters:
- *       - in: path
- *         name: studentId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: List of upcoming appointments for the student
- */
-router.get('/student/:studentId/upcoming', async (req, res) => {
-  try {
-    const { studentId } = req.params;
-
-    // Get student
-    const [student] = await db
-      .select()
-      .from(tables.students)
-      .where(eq(tables.students.studentId, studentId))
-      .limit(1);
-
-    if (!student) {
-      return res.status(404).json({ error: 'Student not found' });
-    }
-
-    const today = new Date();
-
-    const appointments = await db
-      .select({
-        id: tables.appointments.id,
-        title: tables.appointments.title,
-        appointmentType: tables.appointments.appointmentType,
-        date: tables.appointments.date,
-        venue: tables.appointments.venue,
-        description: tables.appointments.description,
-        mandatory: tables.appointments.mandatory,
-        attendanceStatus: tables.appointmentAttendance.status,
-        attendanceNotes: tables.appointmentAttendance.notes
-      })
-      .from(tables.appointments)
-      .leftJoin(
-        tables.appointmentAttendance,
-        and(
-          eq(tables.appointments.id, tables.appointmentAttendance.appointmentId),
-          eq(tables.appointmentAttendance.studentId, student.id)
-        )
-      )
-      .where(sql`${tables.appointments.date} >= ${today}`)
-      .orderBy(tables.appointments.date);
-
-    res.json(appointments);
-  } catch (error) {
-    console.error('Error fetching student upcoming appointments:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * @swagger
- * /api/appointments/attendance/update/:id:
- *   patch:
- *     tags: [Appointments]
- *     summary: Update attendance record
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [present, absent, excused]
- *               notes:
- *                 type: string
- *     responses:
- *       200:
- *         description: Attendance updated successfully
- */
-router.patch('/attendance/update/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, notes, markedBy } = req.body;
-
-    const updateData: any = {};
-    if (status) updateData.status = status;
-    if (notes !== undefined) updateData.notes = notes;
-    if (markedBy) updateData.markedBy = markedBy;
-
-    const [updated] = await db
-      .update(tables.appointmentAttendance)
-      .set(updateData)
-      .where(eq(tables.appointmentAttendance.id, parseInt(id)))
-      .returning();
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-
-    res.json(updated);
-  } catch (error) {
-    console.error('Error updating attendance:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * @swagger
- * /api/appointments/attendance/delete/:id:
- *   delete:
- *     tags: [Appointments]
- *     summary: Delete attendance record
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Attendance deleted successfully
- */
-router.delete('/attendance/delete/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const [deleted] = await db
-      .delete(tables.appointmentAttendance)
-      .where(eq(tables.appointmentAttendance.id, parseInt(id)))
-      .returning();
-
-    if (!deleted) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-
-    res.json({ message: 'Attendance record deleted successfully', record: deleted });
-  } catch (error) {
-    console.error('Error deleting attendance:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
