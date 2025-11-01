@@ -317,7 +317,7 @@ async function main() {
 
   // Create Appointments (University Events)
   console.log('Creating appointments...');
-  
+
   const creatorId = lecturers[0]; // Use first lecturer as creator
   const appointmentIds: number[] = [];
   const today = new Date();
@@ -325,45 +325,45 @@ async function main() {
 
   // Define recurring schedule
   const recurringSchedule = [
-    { 
+    {
       dayOfWeek: 2, // Tuesday
-      title: 'Tuesday Assembly', 
-      type: 'assembly', 
+      title: 'Tuesday Assembly',
+      type: 'assembly',
       venue: () => rand(['Auditorium', 'Amphitheatre', 'Baraton Union Church(BUC)']),
       time: { hour: 11, minute: 0 }, // 11:00 AM - 12:00 PM
-      mandatory: true 
+      mandatory: true
     },
-    { 
+    {
       dayOfWeek: 3, // Wednesday
-      title: 'Wednesday Evening Church Service', 
-      type: 'church', 
+      title: 'Wednesday Evening Church Service',
+      type: 'church',
       venue: () => 'Baraton Union Church(BUC)',
       time: { hour: 18, minute: 0 }, // 6:00 PM
-      mandatory: true 
+      mandatory: true
     },
-    { 
+    {
       dayOfWeek: 5, // Friday
-      title: 'Friday Evening Church Service', 
-      type: 'church', 
+      title: 'Friday Evening Church Service',
+      type: 'church',
       venue: () => 'Baraton Union Church(BUC)',
       time: { hour: 18, minute: 0 }, // 6:00 PM
-      mandatory: true 
+      mandatory: true
     },
-    { 
+    {
       dayOfWeek: 6, // Saturday
-      title: 'Saturday Morning Church Service', 
-      type: 'church', 
+      title: 'Saturday Morning Church Service',
+      type: 'church',
       venue: () => 'Baraton Union Church(BUC)',
       time: { hour: 9, minute: 0 }, // 9:00 AM - 12:30 PM
-      mandatory: true 
+      mandatory: true
     },
-    { 
+    {
       dayOfWeek: 6, // Saturday
-      title: 'Saturday Evening Church Service', 
-      type: 'church', 
+      title: 'Saturday Evening Church Service',
+      type: 'church',
       venue: () => 'Baraton Union Church(BUC)',
       time: { hour: 18, minute: 0 }, // 6:00 PM
-      mandatory: true 
+      mandatory: true
     }
   ];
 
@@ -376,19 +376,19 @@ async function main() {
       // Calculate the date for this appointment
       const appointmentDate = new Date(today);
       appointmentDate.setDate(today.getDate() - (weekOffset * 7));
-      
+
       // Find the next occurrence of the target day of week
       const currentDay = appointmentDate.getDay();
       const daysUntilTarget = (schedule.dayOfWeek - currentDay + 7) % 7;
       appointmentDate.setDate(appointmentDate.getDate() + daysUntilTarget);
-      
+
       // Set the time
       appointmentDate.setHours(schedule.time.hour, schedule.time.minute, 0, 0);
 
       // Only create if it's not in the future
       if (appointmentDate <= today) {
         const venue = typeof schedule.venue === 'function' ? schedule.venue() : schedule.venue;
-        
+
         const appointment = await db.insert(tables.appointments).values({
           title: schedule.title,
           appointmentType: schedule.type,

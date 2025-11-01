@@ -893,11 +893,11 @@ router.post('/attendance/bulk', async (req, res) => {
           }
         })
         .returning();
-      
+
       results.push(attendance);
     }
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Bulk attendance marked successfully',
       count: results.length,
       records: results
@@ -932,7 +932,7 @@ router.post('/attendance/bulk', async (req, res) => {
 router.get('/attendance/stats', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    
+
     const whereConditions = [];
     if (startDate) {
       whereConditions.push(sql`${tables.appointments.date} >= ${new Date(startDate as string)}`);
@@ -996,7 +996,7 @@ router.get('/attendance/stats', async (req, res) => {
 router.get('/student/:studentId/upcoming', async (req, res) => {
   try {
     const { studentId } = req.params;
-    
+
     // Get student
     const [student] = await db
       .select()
@@ -1009,7 +1009,7 @@ router.get('/student/:studentId/upcoming', async (req, res) => {
     }
 
     const today = new Date();
-    
+
     const appointments = await db
       .select({
         id: tables.appointments.id,
