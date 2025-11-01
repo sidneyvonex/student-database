@@ -368,10 +368,13 @@ async function main() {
   ];
 
   // Generate appointments for the past 8 weeks (to have historical data)
-  const weeksToGenerate = 8;
+  const pastWeeksToGenerate = 8;
+  // Generate appointments for the next 12 weeks (3 months of upcoming events)
+  const futureWeeksToGenerate = 12;
   let appointmentCount = 0;
 
-  for (let weekOffset = weeksToGenerate - 1; weekOffset >= 0; weekOffset--) {
+  // Generate PAST appointments (with attendance marked)
+  for (let weekOffset = pastWeeksToGenerate - 1; weekOffset >= 0; weekOffset--) {
     for (const schedule of recurringSchedule) {
       // Calculate the date for this appointment
       const appointmentDate = new Date(today);
@@ -416,6 +419,43 @@ async function main() {
             notes: isPresent ? null : (Math.random() > 0.7 ? 'Excused - Medical' : null)
           });
         }
+      }
+    }
+  }
+
+  // Generate FUTURE appointments (no attendance marked yet)
+  for (let weekOffset = 0; weekOffset < futureWeeksToGenerate; weekOffset++) {
+    for (const schedule of recurringSchedule) {
+      // Calculate the date for this appointment
+      const appointmentDate = new Date(today);
+      appointmentDate.setDate(today.getDate() + (weekOffset * 7));
+
+      // Find the next occurrence of the target day of week
+      const currentDay = appointmentDate.getDay();
+      const daysUntilTarget = (schedule.dayOfWeek - currentDay + 7) % 7;
+      appointmentDate.setDate(appointmentDate.getDate() + daysUntilTarget);
+
+      // Set the time
+      appointmentDate.setHours(schedule.time.hour, schedule.time.minute, 0, 0);
+
+      // Only create if it's in the future
+      if (appointmentDate > today) {
+        const venue = typeof schedule.venue === 'function' ? schedule.venue() : schedule.venue;
+
+        const appointment = await db.insert(tables.appointments).values({
+          title: schedule.title,
+          appointmentType: schedule.type,
+          date: appointmentDate,
+          venue: venue,
+          description: `${schedule.title} - All students ${schedule.mandatory ? 'required' : 'invited'} to attend`,
+          mandatory: schedule.mandatory,
+          createdBy: creatorId
+        }).returning({ id: tables.appointments.id });
+
+        appointmentIds.push(appointment[0].id);
+        appointmentCount++;
+
+        // No attendance records for future appointments
       }
     }
   }
