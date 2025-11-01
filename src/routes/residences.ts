@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { db, tables } from '../db/client';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 
 const router: RouterType = Router();
 
@@ -67,16 +67,16 @@ router.get('/', async (req, res) => {
 router.get('/student/:studentId', async (req, res) => {
   try {
     const studentId = req.params.studentId; // This is the string like "student001"
-    
+
     // First, find the student to get their numeric ID
     const [student] = await db.select()
       .from(tables.students)
       .where(eq(tables.students.studentId, studentId));
-    
+
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
-    
+
     // Then get their residence using the numeric ID with full details
     const [residence] = await db.select({
       id: tables.residences.id,
@@ -95,16 +95,16 @@ router.get('/student/:studentId', async (req, res) => {
       offCampusArea: tables.residences.offCampusArea,
       allocatedAt: tables.residences.allocatedAt
     })
-    .from(tables.residences)
-    .innerJoin(tables.students, eq(tables.residences.studentId, tables.students.id))
-    .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
-    .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
-    .where(eq(tables.students.studentId, studentId));
-    
+      .from(tables.residences)
+      .innerJoin(tables.students, eq(tables.residences.studentId, tables.students.id))
+      .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
+      .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
+      .where(eq(tables.students.studentId, studentId));
+
     if (!residence) {
       return res.status(404).json({ error: 'Residence not found for this student' });
     }
-    
+
     res.json(residence);
   } catch (error) {
     console.error('Error fetching residence by studentId:', error);
@@ -450,6 +450,162 @@ router.put('/bookings/:id/approve', async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error('Error updating room booking:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============= RESIDENCE ATTENDANCE (ROOM CHECK-INS) =============
+
+/**
+ * @swagger
+ * /api/residences/attendance/student/{studentId}:
+ *   get:
+ *     tags: [Residences]
+ *     summary: Get residence attendance history for a student by their studentId (e.g., student001)
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Student identifier like student001
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 30
+ *         description: Number of records to return
+ *     responses:
+ *       200:
+ *         description: List of residence attendance records
+ *       404:
+ *         description: Student not found
+ */
+router.get('/attendance/student/:studentId', async (req, res) => {
+  try {
+    const studentId = req.params.studentId;
+    const limit = parseInt(req.query.limit as string) || 30;
+
+    // First, find the student to get their numeric ID
+    const [student] = await db.select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId));
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Get attendance records
+    const attendanceRecords = await db.select({
+      id: tables.residenceAttendance.id,
+      date: tables.residenceAttendance.date,
+      status: tables.residenceAttendance.status,
+      hostelName: tables.residenceAttendance.hostelName,
+      roomNumber: tables.residenceAttendance.roomNumber,
+      notes: tables.residenceAttendance.notes,
+      officerName: tables.staff.firstName,
+      officerLastName: tables.staff.lastName
+    })
+      .from(tables.residenceAttendance)
+      .leftJoin(tables.staff, eq(tables.residenceAttendance.officerId, tables.staff.id))
+      .where(eq(tables.residenceAttendance.studentId, student.id))
+      .orderBy(desc(tables.residenceAttendance.date))
+      .limit(limit);
+
+    res.json({
+      studentId: student.studentId,
+      studentName: `${student.firstName} ${student.lastName}`,
+      totalRecords: attendanceRecords.length,
+      attendance: attendanceRecords
+    });
+  } catch (error) {
+    console.error('Error fetching residence attendance:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/residences/attendance/date/{date}:
+ *   get:
+ *     tags: [Residences]
+ *     summary: Get all residence attendance for a specific date
+ *     parameters:
+ *       - in: path
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Date in YYYY-MM-DD format
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [present, absent]
+ *         description: Filter by attendance status
+ *     responses:
+ *       200:
+ *         description: List of residence attendance records for the date
+ */
+router.get('/attendance/date/:date', async (req, res) => {
+  try {
+    const dateStr = req.params.date;
+    const status = req.query.status as string;
+
+    // Parse the date
+    const targetDate = new Date(dateStr);
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+
+    // Set time to start and end of day for the query
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    let query = db.select({
+      id: tables.residenceAttendance.id,
+      studentId: tables.students.studentId,
+      studentName: tables.students.firstName,
+      studentLastName: tables.students.lastName,
+      date: tables.residenceAttendance.date,
+      status: tables.residenceAttendance.status,
+      hostelName: tables.residenceAttendance.hostelName,
+      roomNumber: tables.residenceAttendance.roomNumber,
+      notes: tables.residenceAttendance.notes
+    })
+      .from(tables.residenceAttendance)
+      .innerJoin(tables.students, eq(tables.residenceAttendance.studentId, tables.students.id))
+      .$dynamic();
+
+    // Apply filters
+    if (status) {
+      query = query.where(
+        and(
+          eq(tables.residenceAttendance.status, status)
+        )
+      );
+    }
+
+    const records = await query;
+
+    // Filter by date range (since we can't easily do BETWEEN with timestamps in this query)
+    const filteredRecords = records.filter(record => {
+      const recordDate = new Date(record.date);
+      return recordDate >= startOfDay && recordDate <= endOfDay;
+    });
+
+    res.json({
+      date: dateStr,
+      totalRecords: filteredRecords.length,
+      presentCount: filteredRecords.filter(r => r.status === 'present').length,
+      absentCount: filteredRecords.filter(r => r.status === 'absent').length,
+      attendance: filteredRecords
+    });
+  } catch (error) {
+    console.error('Error fetching residence attendance by date:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

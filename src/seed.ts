@@ -480,6 +480,59 @@ async function main() {
 
   console.log(`Created ${appointmentCount} appointments with attendance records`);
 
+  // ============================================
+  // RESIDENCE ATTENDANCE (Daily Room Check-ins for On-Campus Students)
+  // ============================================
+  console.log('Seeding residence attendance records...');
+
+  // Get all on-campus students with their hostel and room details
+  const onCampusStudents = await db.select({
+    studentId: tables.students.id,
+    hostelName: tables.hostels.name,
+    roomNumber: tables.rooms.roomNumber
+  })
+    .from(tables.residences)
+    .innerJoin(tables.students, eq(tables.residences.studentId, tables.students.id))
+    .innerJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
+    .innerJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
+    .where(eq(tables.residences.residenceType, 'on-campus'));
+
+  console.log(`Found ${onCampusStudents.length} on-campus students for daily room attendance`);
+
+  // Generate daily attendance for the past 2 months (60 days)
+  const daysToGenerate = 60;
+  let residenceAttendanceCount = 0;
+
+  for (let dayOffset = daysToGenerate - 1; dayOffset >= 0; dayOffset--) {
+    const checkDate = new Date(today);
+    checkDate.setDate(today.getDate() - dayOffset);
+
+    // Set to 10 PM (22:00) for evening room check
+    checkDate.setHours(22, 0, 0, 0);
+
+    // Only create if it's in the past (not today or future)
+    if (checkDate < today) {
+      for (const student of onCampusStudents) {
+        // 90% attendance rate for room check-ins (students present in their rooms)
+        const isPresent = Math.random() < 0.90;
+
+        await db.insert(tables.residenceAttendance).values({
+          studentId: student.studentId,
+          date: checkDate,
+          status: isPresent ? 'present' : 'absent',
+          officerId: creatorId, // Warden or security officer
+          hostelName: student.hostelName,
+          roomNumber: student.roomNumber,
+          notes: isPresent ? null : (Math.random() > 0.7 ? 'Out with permission' : null)
+        });
+
+        residenceAttendanceCount++;
+      }
+    }
+  }
+
+  console.log(`Created ${residenceAttendanceCount} residence attendance records`);
+
   // Metadata
   await db.insert(tables.metadata).values({
     key: 'university_name',
@@ -494,7 +547,8 @@ async function main() {
   console.log(`Created ${roomIds.length} rooms`);
   console.log(`Created ${studentIds.length} students`);
   console.log(`Created ${appointmentCount} appointments`);
-  console.log(`Created ${studentIds.length * appointmentCount} attendance records`);
+  console.log(`Created ${studentIds.length * appointmentCount} appointment attendance records`);
+  console.log(`Created ${residenceAttendanceCount} residence attendance records (daily room checks)`);
   console.log('===========================================');
 }
 
