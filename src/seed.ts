@@ -317,70 +317,110 @@ async function main() {
 
   // Create Appointments (University Events)
   console.log('Creating appointments...');
-  const appointmentTypes = [
-    { title: 'Wednesday Evening Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
-    { title: 'Friday Evening Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
-    { title: 'Saturday Morning Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
-    { title: 'Saturday Evening Church Service', type: 'church', venue: 'Baraton Union Church(BUC)', mandatory: true },
-    { title: 'Tuesday Assembly', type: 'assembly', venue: rand(['Auditorium', 'Amphitheatre', 'Baraton Union Church(BUC)']), mandatory: true },
-  ];
-
+  
   const creatorId = lecturers[0]; // Use first lecturer as creator
   const appointmentIds: number[] = [];
-
-  // Create appointments for the past 4 weeks
   const today = new Date();
-  for (let weekOffset = 3; weekOffset >= 0; weekOffset--) {
-    for (const apt of appointmentTypes) {
-      let daysOffset = 0;
-      if (apt.type === 'church') {
-        if (apt.title.includes('Wednesday')) daysOffset = 3; // Wednesday
-        else if (apt.title.includes('Friday')) daysOffset = 5; // Friday
-        else if (apt.title.includes('Saturday Morning')) daysOffset = 6; // Saturday
-        else if (apt.title.includes('Saturday Evening')) daysOffset = 6; // Saturday
-      } else if (apt.type === 'assembly') {
-        daysOffset = 2; // Tuesday
-      }
+  today.setHours(0, 0, 0, 0); // Set to start of today
 
+  // Define recurring schedule
+  const recurringSchedule = [
+    { 
+      dayOfWeek: 2, // Tuesday
+      title: 'Tuesday Assembly', 
+      type: 'assembly', 
+      venue: () => rand(['Auditorium', 'Amphitheatre', 'Baraton Union Church(BUC)']),
+      time: { hour: 11, minute: 0 }, // 11:00 AM - 12:00 PM
+      mandatory: true 
+    },
+    { 
+      dayOfWeek: 3, // Wednesday
+      title: 'Wednesday Evening Church Service', 
+      type: 'church', 
+      venue: () => 'Baraton Union Church(BUC)',
+      time: { hour: 18, minute: 0 }, // 6:00 PM
+      mandatory: true 
+    },
+    { 
+      dayOfWeek: 5, // Friday
+      title: 'Friday Evening Church Service', 
+      type: 'church', 
+      venue: () => 'Baraton Union Church(BUC)',
+      time: { hour: 18, minute: 0 }, // 6:00 PM
+      mandatory: true 
+    },
+    { 
+      dayOfWeek: 6, // Saturday
+      title: 'Saturday Morning Church Service', 
+      type: 'church', 
+      venue: () => 'Baraton Union Church(BUC)',
+      time: { hour: 9, minute: 0 }, // 9:00 AM - 12:30 PM
+      mandatory: true 
+    },
+    { 
+      dayOfWeek: 6, // Saturday
+      title: 'Saturday Evening Church Service', 
+      type: 'church', 
+      venue: () => 'Baraton Union Church(BUC)',
+      time: { hour: 18, minute: 0 }, // 6:00 PM
+      mandatory: true 
+    }
+  ];
+
+  // Generate appointments for the past 8 weeks (to have historical data)
+  const weeksToGenerate = 8;
+  let appointmentCount = 0;
+
+  for (let weekOffset = weeksToGenerate - 1; weekOffset >= 0; weekOffset--) {
+    for (const schedule of recurringSchedule) {
+      // Calculate the date for this appointment
       const appointmentDate = new Date(today);
-      appointmentDate.setDate(today.getDate() - (weekOffset * 7) - (7 - daysOffset));
+      appointmentDate.setDate(today.getDate() - (weekOffset * 7));
+      
+      // Find the next occurrence of the target day of week
+      const currentDay = appointmentDate.getDay();
+      const daysUntilTarget = (schedule.dayOfWeek - currentDay + 7) % 7;
+      appointmentDate.setDate(appointmentDate.getDate() + daysUntilTarget);
+      
+      // Set the time
+      appointmentDate.setHours(schedule.time.hour, schedule.time.minute, 0, 0);
 
-      // Set appropriate times
-      if (apt.type === 'church' && apt.title.includes('Morning')) {
-        appointmentDate.setHours(9, 0, 0, 0); // Saturday 9am
-      } else if (apt.type === 'church' && apt.title.includes('Evening')) {
-        appointmentDate.setHours(18, 0, 0, 0); // Evening services at 6pm
-      } else {
-        appointmentDate.setHours(14, 0, 0, 0); // Assembly at 2pm
-      }
+      // Only create if it's not in the future
+      if (appointmentDate <= today) {
+        const venue = typeof schedule.venue === 'function' ? schedule.venue() : schedule.venue;
+        
+        const appointment = await db.insert(tables.appointments).values({
+          title: schedule.title,
+          appointmentType: schedule.type,
+          date: appointmentDate,
+          venue: venue,
+          description: `${schedule.title} - All students ${schedule.mandatory ? 'required' : 'invited'} to attend`,
+          mandatory: schedule.mandatory,
+          createdBy: creatorId
+        }).returning({ id: tables.appointments.id });
 
-      const appointment = await db.insert(tables.appointments).values({
-        title: apt.title,
-        appointmentType: apt.type,
-        date: appointmentDate,
-        venue: apt.venue,
-        description: `${apt.title} - All students ${apt.mandatory ? 'required' : 'invited'} to attend`,
-        mandatory: apt.mandatory,
-        createdBy: creatorId
-      }).returning({ id: tables.appointments.id });
+        appointmentIds.push(appointment[0].id);
+        appointmentCount++;
 
-      appointmentIds.push(appointment[0].id);
+        // Mark attendance for past appointments only
+        // Default is absent unless marked present (80% attendance rate for mandatory)
+        for (const stuId of studentIds) {
+          const attendanceRate = schedule.mandatory ? 0.80 : 0.40;
+          const isPresent = Math.random() < attendanceRate;
 
-      // Mark attendance for students (80% attendance rate for mandatory, 40% for optional)
-      for (const stuId of studentIds) {
-        const attendanceRate = apt.mandatory ? 0.8 : 0.4;
-        const attended = Math.random() < attendanceRate;
-
-        await db.insert(tables.appointmentAttendance).values({
-          appointmentId: appointment[0].id,
-          studentId: stuId,
-          status: attended ? 'present' : 'absent',
-          markedBy: creatorId,
-          notes: attended ? null : (Math.random() > 0.7 ? 'Excused - Medical' : null)
-        });
+          await db.insert(tables.appointmentAttendance).values({
+            appointmentId: appointment[0].id,
+            studentId: stuId,
+            status: isPresent ? 'present' : 'absent',
+            markedBy: creatorId,
+            notes: isPresent ? null : (Math.random() > 0.7 ? 'Excused - Medical' : null)
+          });
+        }
       }
     }
   }
+
+  console.log(`Created ${appointmentCount} appointments with attendance records`);
 
   // Metadata
   await db.insert(tables.metadata).values({
@@ -395,8 +435,8 @@ async function main() {
   console.log(`Created ${Object.keys(hostelIds).length} hostels`);
   console.log(`Created ${roomIds.length} rooms`);
   console.log(`Created ${studentIds.length} students`);
-  console.log(`Created ${appointmentIds.length} appointments`);
-  console.log(`Created ${studentIds.length * appointmentIds.length} attendance records`);
+  console.log(`Created ${appointmentCount} appointments`);
+  console.log(`Created ${studentIds.length * appointmentCount} attendance records`);
   console.log('===========================================');
 }
 
