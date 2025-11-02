@@ -11,7 +11,7 @@ const router: RouterType = Router();
  * /api/residences:
  *   get:
  *     tags: [Residences]
- *     summary: Get all residence allocations
+ *     summary: Get all residence allocations with hostel and room details
  *     parameters:
  *       - in: query
  *         name: residenceType
@@ -24,19 +24,39 @@ const router: RouterType = Router();
  *           type: string
  *     responses:
  *       200:
- *         description: List of residence allocations
+ *         description: List of residence allocations with hostel name and room number
  */
 router.get('/', async (req, res) => {
   try {
     const { residenceType, hostelId } = req.query;
-    const where = [] as any[];
+    
+    // Build query with joins to get hostelName and roomNumber
+    let query = db.select({
+      id: tables.residences.id,
+      studentId: tables.residences.studentId,
+      residenceType: tables.residences.residenceType,
+      hostelId: tables.residences.hostelId,
+      roomId: tables.residences.roomId,
+      bedNumber: tables.residences.bedNumber,
+      hostelName: tables.hostels.name,
+      roomNumber: tables.rooms.roomNumber,
+      offCampusHostelName: tables.residences.offCampusHostelName,
+      offCampusRoomNumber: tables.residences.offCampusRoomNumber,
+      offCampusArea: tables.residences.offCampusArea,
+      allocated: tables.residences.allocated,
+      allocatedAt: tables.residences.allocatedAt
+    })
+    .from(tables.residences)
+    .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
+    .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
+    .$dynamic();
 
+    // Apply filters
+    const where = [] as any[];
     if (residenceType) where.push(eq(tables.residences.residenceType, residenceType as string));
     if (hostelId) where.push(eq(tables.residences.hostelId, Number(hostelId)));
 
-    const items = where.length
-      ? await db.select().from(tables.residences).where(and(...where))
-      : await db.select().from(tables.residences);
+    const items = where.length ? await query.where(and(...where)) : await query;
 
     res.json(items);
   } catch (error) {
@@ -108,6 +128,108 @@ router.get('/student/:studentId', async (req, res) => {
     res.json(residence);
   } catch (error) {
     console.error('Error fetching residence by studentId:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/residences/roommates/{studentId}:
+ *   get:
+ *     tags: [Residences]
+ *     summary: Get roommates for a student (only for on-campus students)
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Student identifier like student001
+ *     responses:
+ *       200:
+ *         description: List of roommates with their details
+ *       404:
+ *         description: Student not found or not on-campus
+ */
+router.get('/roommates/:studentId', async (req, res) => {
+  try {
+    const studentId = req.params.studentId;
+
+    // Get the student
+    const [student] = await db.select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId));
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Get student's residence
+    const [residence] = await db.select({
+      residenceType: tables.residences.residenceType,
+      hostelId: tables.residences.hostelId,
+      roomId: tables.residences.roomId,
+      hostelName: tables.hostels.name,
+      roomNumber: tables.rooms.roomNumber
+    })
+    .from(tables.residences)
+    .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
+    .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
+    .where(eq(tables.residences.studentId, student.id));
+
+    if (!residence) {
+      return res.status(404).json({ error: 'Residence not found for this student' });
+    }
+
+    // Check if on-campus
+    if (residence.residenceType !== 'on-campus' || !residence.roomId) {
+      return res.json({
+        studentId: student.studentId,
+        studentName: `${student.firstName} ${student.lastName}`,
+        residenceType: residence.residenceType,
+        message: 'This student is not on-campus. Roommates information is only available for on-campus students.',
+        roommates: []
+      });
+    }
+
+    // Get all students in the same room (excluding the requesting student)
+    const roommates = await db.select({
+      studentId: tables.students.studentId,
+      firstName: tables.students.firstName,
+      lastName: tables.students.lastName,
+      gender: tables.students.gender,
+      email: tables.students.email,
+      phone: tables.students.phone,
+      yearOfStudy: tables.students.yearOfStudy,
+      bedNumber: tables.residences.bedNumber,
+      departmentName: tables.departments.name,
+      schoolName: tables.schools.name
+    })
+    .from(tables.residences)
+    .innerJoin(tables.students, eq(tables.residences.studentId, tables.students.id))
+    .leftJoin(tables.departments, eq(tables.students.departmentId, tables.departments.id))
+    .leftJoin(tables.schools, eq(tables.students.schoolId, tables.schools.id))
+    .where(
+      and(
+        eq(tables.residences.roomId, residence.roomId),
+        eq(tables.residences.residenceType, 'on-campus')
+      )
+    );
+
+    // Filter out the requesting student
+    const roommatesList = roommates.filter(r => r.studentId !== studentId);
+
+    res.json({
+      studentId: student.studentId,
+      studentName: `${student.firstName} ${student.lastName}`,
+      residenceType: residence.residenceType,
+      hostelName: residence.hostelName,
+      roomNumber: residence.roomNumber,
+      totalRoommates: roommatesList.length,
+      roommates: roommatesList
+    });
+  } catch (error) {
+    console.error('Error fetching roommates:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

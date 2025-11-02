@@ -165,6 +165,67 @@ export const metadata = pgTable("metadata", {
   value: text("value").notNull(),
 });
 
+// ============= WORK-STUDY SYSTEM =============
+
+export const workStudyApplications = pgTable("work_study_applications", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().unique(), // FK to students - one application per student
+  academicYear: text("academic_year").notNull(), // e.g., "2025-2026"
+  semester: text("semester").notNull(), // e.g., "2025-1"
+  reason: text("reason").notNull(), // Why they need work-study
+  financialNeed: text("financial_need"), // Details about financial situation
+  previousWorkExperience: text("previous_work_experience"),
+  skills: text("skills"), // Relevant skills (e.g., "Computer skills, Customer service")
+  availability: text("availability"), // e.g., "Afternoons, Weekends"
+  status: text("status").notNull().default("pending"), // pending, approved, rejected
+  appliedAt: timestamp("applied_at").defaultNow(),
+  reviewedBy: integer("reviewed_by"), // staff id who reviewed
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+});
+
+export const workStudyPositions = pgTable("work_study_positions", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(), // e.g., "Library Assistant", "IT Support", "Cafeteria Staff"
+  department: text("department").notNull(), // e.g., "Library", "IT Department", "Cafeteria"
+  description: text("description"),
+  requirements: text("requirements"), // e.g., "Basic computer skills"
+  hoursPerWeek: integer("hours_per_week").notNull(), // e.g., 10, 15, 20
+  payRatePerHour: numeric("pay_rate_per_hour", { precision: 10, scale: 2 }).notNull(), // e.g., 5.00
+  totalSlots: integer("total_slots").notNull().default(1), // How many students can work this position
+  filledSlots: integer("filled_slots").notNull().default(0),
+  supervisorId: integer("supervisor_id"), // FK to staff
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const workStudyAssignments = pgTable("work_study_assignments", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(), // FK to students
+  positionId: integer("position_id").notNull(), // FK to workStudyPositions
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"), // null if ongoing
+  status: text("status").notNull().default("active"), // active, completed, terminated
+  assignedBy: integer("assigned_by"), // staff id who made the assignment
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  notes: text("notes"),
+});
+
+export const workStudyTimesheets = pgTable("work_study_timesheets", {
+  id: serial("id").primaryKey(),
+  assignmentId: integer("assignment_id").notNull(), // FK to workStudyAssignments
+  studentId: integer("student_id").notNull(),
+  date: timestamp("date").notNull(),
+  clockIn: timestamp("clock_in"),
+  clockOut: timestamp("clock_out"),
+  hoursWorked: numeric("hours_worked", { precision: 5, scale: 2 }), // e.g., 4.5 hours
+  taskDescription: text("task_description"), // What they worked on
+  supervisorId: integer("supervisor_id"), // FK to staff
+  approved: boolean("approved").default(false),
+  approvedAt: timestamp("approved_at"),
+  notes: text("notes"),
+});
+
 export type Role = typeof roles.$inferSelect;
 export type School = typeof schools.$inferSelect;
 export type Department = typeof departments.$inferSelect;
@@ -179,3 +240,7 @@ export type Course = typeof courses.$inferSelect;
 export type Enrollment = typeof enrollments.$inferSelect;
 export type Fee = typeof fees.$inferSelect;
 export type ResidenceAttendance = typeof residenceAttendance.$inferSelect;
+export type WorkStudyApplication = typeof workStudyApplications.$inferSelect;
+export type WorkStudyPosition = typeof workStudyPositions.$inferSelect;
+export type WorkStudyAssignment = typeof workStudyAssignments.$inferSelect;
+export type WorkStudyTimesheet = typeof workStudyTimesheets.$inferSelect;

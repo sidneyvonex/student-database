@@ -14,6 +14,7 @@ import hostelRoutes from './routes/hostels';
 import enrollmentRoutes from './routes/enrollments';
 import feeRoutes from './routes/fees';
 import academicRoutes from './routes/academic';
+import workStudyRoutes from './routes/work-study';
 
 const app = express();
 
@@ -105,6 +106,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/hostels', hostelRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/fees', feeRoutes);
+app.use('/api/work-study', workStudyRoutes);
 app.use('/api', academicRoutes); // schools, departments, roles, summary
 
 app.listen(PORT, () => {

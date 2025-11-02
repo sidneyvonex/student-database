@@ -17,6 +17,10 @@ async function main() {
 
   // Clear existing data
   console.log('Clearing existing data...');
+  await db.delete(tables.workStudyTimesheets);
+  await db.delete(tables.workStudyAssignments);
+  await db.delete(tables.workStudyApplications);
+  await db.delete(tables.workStudyPositions);
   await db.delete(tables.appointmentAttendance);
   await db.delete(tables.appointments);
   await db.delete(tables.residenceAttendance);
@@ -533,6 +537,173 @@ async function main() {
 
   console.log(`Created ${residenceAttendanceCount} residence attendance records`);
 
+  // ============================================
+  // WORK-STUDY SYSTEM
+  // ============================================
+  console.log('Seeding work-study system...');
+  
+  // Create work-study positions
+  const workStudyPositionsData = [
+    {
+      title: 'Library Assistant',
+      department: 'Library',
+      description: 'Assist with shelving books, helping students find resources, and maintaining library order',
+      requirements: 'Good organizational skills, friendly demeanor',
+      hoursPerWeek: 10,
+      payRatePerHour: '5.00',
+      totalSlots: 4,
+      filledSlots: 2
+    },
+    {
+      title: 'IT Support Assistant',
+      department: 'IT Department',
+      description: 'Help students with basic computer issues, maintain computer labs',
+      requirements: 'Basic computer troubleshooting skills',
+      hoursPerWeek: 12,
+      payRatePerHour: '6.50',
+      totalSlots: 3,
+      filledSlots: 2
+    },
+    {
+      title: 'Cafeteria Staff',
+      department: 'Cafeteria',
+      description: 'Assist with food preparation, serving, and cleaning',
+      requirements: 'Food handling certificate preferred',
+      hoursPerWeek: 15,
+      payRatePerHour: '4.50',
+      totalSlots: 6,
+      filledSlots: 4
+    },
+    {
+      title: 'Student Center Receptionist',
+      department: 'Student Affairs',
+      description: 'Greet visitors, answer phones, provide information to students',
+      requirements: 'Good communication skills, professional appearance',
+      hoursPerWeek: 10,
+      payRatePerHour: '5.50',
+      totalSlots: 2,
+      filledSlots: 1
+    },
+    {
+      title: 'Grounds Maintenance Assistant',
+      department: 'Facilities',
+      description: 'Help maintain campus grounds, gardens, and outdoor spaces',
+      requirements: 'Physical fitness, willingness to work outdoors',
+      hoursPerWeek: 12,
+      payRatePerHour: '4.00',
+      totalSlots: 5,
+      filledSlots: 3
+    }
+  ];
+
+  const positionIds = [];
+  for (const pos of workStudyPositionsData) {
+    const [position] = await db.insert(tables.workStudyPositions).values({
+      ...pos,
+      supervisorId: creatorId,
+      isActive: true
+    }).returning({ id: tables.workStudyPositions.id });
+    positionIds.push(position.id);
+  }
+
+  console.log(`Created ${positionIds.length} work-study positions`);
+
+  // Select 5 random students for work-study (mix of approved and pending)
+  const workStudyStudentIds = studentIds.slice(0, 5); // First 5 students
+  
+  let applicationCount = 0;
+  let assignmentCount = 0;
+  let timesheetCount = 0;
+
+  for (let i = 0; i < workStudyStudentIds.length; i++) {
+    const studentId = workStudyStudentIds[i];
+    const isApproved = i < 3; // First 3 are approved, last 2 are pending
+
+    // Create application
+    const [application] = await db.insert(tables.workStudyApplications).values({
+      studentId,
+      academicYear: '2025-2026',
+      semester: '2025-1',
+      reason: 'Need financial assistance to cover tuition and living expenses',
+      financialNeed: 'Family income is limited, need to support my education',
+      previousWorkExperience: i % 2 === 0 ? 'Worked at local shop during holidays' : null,
+      skills: ['Computer skills', 'Customer service', 'Time management'][i % 3],
+      availability: i % 2 === 0 ? 'Afternoons and weekends' : 'Morning shifts preferred',
+      status: isApproved ? 'approved' : 'pending',
+      reviewedBy: isApproved ? creatorId : null,
+      reviewedAt: isApproved ? new Date() : null,
+      reviewNotes: isApproved ? 'Application approved - good academic standing' : null
+    }).returning({ id: tables.workStudyApplications.id });
+    
+    applicationCount++;
+
+    // If approved, update student workStudy flag and create assignment
+    if (isApproved) {
+      await db.update(tables.students)
+        .set({ workStudy: true })
+        .where(eq(tables.students.id, studentId));
+
+      // Assign to a position
+      const positionId = positionIds[i % positionIds.length];
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30); // Started 30 days ago
+
+      const [assignment] = await db.insert(tables.workStudyAssignments).values({
+        studentId,
+        positionId,
+        startDate,
+        endDate: null,
+        status: 'active',
+        assignedBy: creatorId,
+        notes: 'Initial assignment for academic year 2025-2026'
+      }).returning({ id: tables.workStudyAssignments.id });
+      
+      assignmentCount++;
+
+      // Create timesheets for the past 3 weeks (3 days per week)
+      for (let week = 0; week < 3; week++) {
+        for (let day = 0; day < 3; day++) {
+          const workDate = new Date();
+          workDate.setDate(workDate.getDate() - (week * 7 + day * 2));
+          workDate.setHours(14, 0, 0, 0); // 2 PM start
+
+          const clockInTime = new Date(workDate);
+          const hoursWorked = 3 + Math.random() * 2; // 3-5 hours
+          const clockOutTime = new Date(clockInTime);
+          clockOutTime.setHours(clockInTime.getHours() + hoursWorked);
+
+          const isApprovedTimesheet = week < 2; // Last 2 weeks approved, current week pending
+
+          await db.insert(tables.workStudyTimesheets).values({
+            assignmentId: assignment.id,
+            studentId,
+            date: workDate,
+            clockIn: clockInTime,
+            clockOut: clockOutTime,
+            hoursWorked: hoursWorked.toFixed(2),
+            taskDescription: [
+              'Assisted students at reference desk',
+              'Organized returned books',
+              'Updated computer inventory',
+              'Helped with tech support tickets',
+              'Cleaned and organized workspace'
+            ][Math.floor(Math.random() * 5)],
+            supervisorId: creatorId,
+            approved: isApprovedTimesheet,
+            approvedAt: isApprovedTimesheet ? new Date() : null,
+            notes: null
+          });
+          
+          timesheetCount++;
+        }
+      }
+    }
+  }
+
+  console.log(`Created ${applicationCount} work-study applications`);
+  console.log(`Created ${assignmentCount} work-study assignments`);
+  console.log(`Created ${timesheetCount} timesheet entries`);
+
   // Metadata
   await db.insert(tables.metadata).values({
     key: 'university_name',
@@ -549,6 +720,9 @@ async function main() {
   console.log(`Created ${appointmentCount} appointments`);
   console.log(`Created ${studentIds.length * appointmentCount} appointment attendance records`);
   console.log(`Created ${residenceAttendanceCount} residence attendance records (daily room checks)`);
+  console.log(`Created ${positionIds.length} work-study positions`);
+  console.log(`Created ${applicationCount} work-study applications (${assignmentCount} approved)`);
+  console.log(`Created ${timesheetCount} timesheet entries`);
   console.log('===========================================');
 }
 
