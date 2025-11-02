@@ -28,26 +28,26 @@ router.get('/', async (req, res) => {
   try {
     const { studentId, semester } = req.query;
     const where = [] as any[];
-    
+
     // If studentId is provided, lookup the numeric ID first
     if (studentId) {
       const [student] = await db.select()
         .from(tables.students)
         .where(eq(tables.students.studentId, studentId as string));
-      
+
       if (!student) {
         return res.status(404).json({ error: 'Student not found' });
       }
-      
+
       where.push(eq(tables.fees.studentId, student.id));
     }
-    
+
     if (semester) where.push(eq(tables.fees.semester, semester as string));
-    
+
     const items = where.length
       ? await db.select().from(tables.fees).where(and(...where))
       : await db.select().from(tables.fees);
-    
+
     res.json(items);
   } catch (error) {
     console.error('Error fetching fees:', error);
@@ -75,11 +75,11 @@ router.get('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const [fee] = await db.select().from(tables.fees).where(eq(tables.fees.id, id));
-    
+
     if (!fee) {
       return res.status(404).json({ error: 'Fee record not found' });
     }
-    
+
     res.json(fee);
   } catch (error) {
     console.error('Error fetching fee record:', error);
@@ -110,7 +110,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { studentId, semester, amountBilled, amountPaid } = req.body;
-    
+
     if (!studentId || !semester || !amountBilled) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -149,7 +149,7 @@ router.put('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const updateData = req.body;
-    
+
     const [updated] = await db.update(tables.fees)
       .set(updateData)
       .where(eq(tables.fees.id, id))
@@ -185,7 +185,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    
+
     const [deleted] = await db.delete(tables.fees)
       .where(eq(tables.fees.id, id))
       .returning();
@@ -223,22 +223,22 @@ router.delete('/:id', async (req, res) => {
 router.get('/balance/:studentId', async (req, res) => {
   try {
     const studentId = req.params.studentId;
-    
+
     // Lookup student by string studentId
     const [student] = await db.select()
       .from(tables.students)
       .where(eq(tables.students.studentId, studentId));
-    
+
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
-    
+
     const fees = await db.select().from(tables.fees).where(eq(tables.fees.studentId, student.id));
-    
+
     const totalBilled = fees.reduce((sum, f) => sum + Number(f.amountBilled), 0);
     const totalPaid = fees.reduce((sum, f) => sum + Number(f.amountPaid), 0);
     const balance = totalBilled - totalPaid;
-    
+
     res.json({
       studentId: student.studentId,
       studentName: `${student.firstName} ${student.lastName}`,
