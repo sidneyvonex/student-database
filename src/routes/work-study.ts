@@ -72,6 +72,102 @@ router.get('/application/:studentId', async (req, res) => {
 
 /**
  * @swagger
+ * /api/work-study/application/{studentId}:
+ *   put:
+ *     tags: [Work-Study]
+ *     summary: Update a work-study application (review/approval by admin)
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Student ID (e.g., student001, student002)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, approved, rejected]
+ *               reviewedBy:
+ *                 type: integer
+ *               reviewedAt:
+ *                 type: string
+ *                 format: date-time
+ *               reviewNotes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Application updated successfully
+ *       404:
+ *         description: Student or application not found
+ */
+router.put('/application/:studentId', async (req, res) => {
+    try {
+        const studentId = req.params.studentId;
+        const { status, reviewedBy, reviewedAt, reviewNotes } = req.body;
+
+        // Get student numeric ID
+        const [student] = await db.select()
+            .from(tables.students)
+            .where(eq(tables.students.studentId, studentId));
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        // Check if application exists
+        const [existing] = await db.select()
+            .from(tables.workStudyApplications)
+            .where(eq(tables.workStudyApplications.studentId, student.id));
+
+        if (!existing) {
+            return res.status(404).json({ error: 'Application not found for this student' });
+        }
+
+        // Prepare update data
+        const updateData: any = {};
+        if (status) updateData.status = status;
+        if (reviewedBy !== undefined) updateData.reviewedBy = reviewedBy;
+        if (reviewedAt) updateData.reviewedAt = new Date(reviewedAt);
+        if (reviewNotes !== undefined) updateData.reviewNotes = reviewNotes;
+
+        // Update the application
+        const [updated] = await db.update(tables.workStudyApplications)
+            .set(updateData)
+            .where(eq(tables.workStudyApplications.studentId, student.id))
+            .returning();
+
+        // If approved, update student's workStudy status
+        if (status === 'approved' && !student.workStudy) {
+            await db.update(tables.students)
+                .set({ workStudy: true })
+                .where(eq(tables.students.id, student.id));
+        }
+
+        // If rejected, set workStudy to false
+        if (status === 'rejected' && student.workStudy) {
+            await db.update(tables.students)
+                .set({ workStudy: false })
+                .where(eq(tables.students.id, student.id));
+        }
+
+        res.json({
+            message: 'Application updated successfully',
+            application: updated
+        });
+    } catch (error) {
+        console.error('Error updating work-study application:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * @swagger
  * /api/work-study/application:
  *   post:
  *     tags: [Work-Study]

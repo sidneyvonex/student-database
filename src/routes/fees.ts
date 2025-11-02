@@ -14,7 +14,8 @@ const router: RouterType = Router();
  *       - in: query
  *         name: studentId
  *         schema:
- *           type: integer
+ *           type: string
+ *         description: Student ID (e.g., student001, student002)
  *       - in: query
  *         name: semester
  *         schema:
@@ -28,7 +29,19 @@ router.get('/', async (req, res) => {
     const { studentId, semester } = req.query;
     const where = [] as any[];
     
-    if (studentId) where.push(eq(tables.fees.studentId, Number(studentId)));
+    // If studentId is provided, lookup the numeric ID first
+    if (studentId) {
+      const [student] = await db.select()
+        .from(tables.students)
+        .where(eq(tables.students.studentId, studentId as string));
+      
+      if (!student) {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+      
+      where.push(eq(tables.fees.studentId, student.id));
+    }
+    
     if (semester) where.push(eq(tables.fees.semester, semester as string));
     
     const items = where.length
@@ -199,22 +212,36 @@ router.delete('/:id', async (req, res) => {
  *         name: studentId
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *         description: Student ID (e.g., student001, student002)
  *     responses:
  *       200:
  *         description: Student balance information
+ *       404:
+ *         description: Student not found
  */
 router.get('/balance/:studentId', async (req, res) => {
   try {
-    const studentId = Number(req.params.studentId);
-    const fees = await db.select().from(tables.fees).where(eq(tables.fees.studentId, studentId));
+    const studentId = req.params.studentId;
+    
+    // Lookup student by string studentId
+    const [student] = await db.select()
+      .from(tables.students)
+      .where(eq(tables.students.studentId, studentId));
+    
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    const fees = await db.select().from(tables.fees).where(eq(tables.fees.studentId, student.id));
     
     const totalBilled = fees.reduce((sum, f) => sum + Number(f.amountBilled), 0);
     const totalPaid = fees.reduce((sum, f) => sum + Number(f.amountPaid), 0);
     const balance = totalBilled - totalPaid;
     
     res.json({
-      studentId,
+      studentId: student.studentId,
+      studentName: `${student.firstName} ${student.lastName}`,
       totalBilled,
       totalPaid,
       balance,
