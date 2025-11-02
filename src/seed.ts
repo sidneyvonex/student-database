@@ -541,7 +541,7 @@ async function main() {
   // WORK-STUDY SYSTEM
   // ============================================
   console.log('Seeding work-study system...');
-  
+
   // Create work-study positions
   const workStudyPositionsData = [
     {
@@ -610,7 +610,7 @@ async function main() {
 
   // Select 5 random students for work-study (mix of approved and pending)
   const workStudyStudentIds = studentIds.slice(0, 5); // First 5 students
-  
+
   let applicationCount = 0;
   let assignmentCount = 0;
   let timesheetCount = 0;
@@ -634,7 +634,7 @@ async function main() {
       reviewedAt: isApproved ? new Date() : null,
       reviewNotes: isApproved ? 'Application approved - good academic standing' : null
     }).returning({ id: tables.workStudyApplications.id });
-    
+
     applicationCount++;
 
     // If approved, update student workStudy flag and create assignment
@@ -657,7 +657,7 @@ async function main() {
         assignedBy: creatorId,
         notes: 'Initial assignment for academic year 2025-2026'
       }).returning({ id: tables.workStudyAssignments.id });
-      
+
       assignmentCount++;
 
       // Create timesheets for the past 3 weeks (3 days per week)
@@ -693,7 +693,7 @@ async function main() {
             approvedAt: isApprovedTimesheet ? new Date() : null,
             notes: null
           });
-          
+
           timesheetCount++;
         }
       }

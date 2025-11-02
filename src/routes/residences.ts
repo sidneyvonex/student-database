@@ -29,7 +29,7 @@ const router: RouterType = Router();
 router.get('/', async (req, res) => {
   try {
     const { residenceType, hostelId } = req.query;
-    
+
     // Build query with joins to get hostelName and roomNumber
     let query = db.select({
       id: tables.residences.id,
@@ -46,10 +46,10 @@ router.get('/', async (req, res) => {
       allocated: tables.residences.allocated,
       allocatedAt: tables.residences.allocatedAt
     })
-    .from(tables.residences)
-    .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
-    .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
-    .$dynamic();
+      .from(tables.residences)
+      .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
+      .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
+      .$dynamic();
 
     // Apply filters
     const where = [] as any[];
@@ -172,10 +172,10 @@ router.get('/roommates/:studentId', async (req, res) => {
       hostelName: tables.hostels.name,
       roomNumber: tables.rooms.roomNumber
     })
-    .from(tables.residences)
-    .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
-    .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
-    .where(eq(tables.residences.studentId, student.id));
+      .from(tables.residences)
+      .leftJoin(tables.hostels, eq(tables.residences.hostelId, tables.hostels.id))
+      .leftJoin(tables.rooms, eq(tables.residences.roomId, tables.rooms.id))
+      .where(eq(tables.residences.studentId, student.id));
 
     if (!residence) {
       return res.status(404).json({ error: 'Residence not found for this student' });
@@ -205,16 +205,16 @@ router.get('/roommates/:studentId', async (req, res) => {
       departmentName: tables.departments.name,
       schoolName: tables.schools.name
     })
-    .from(tables.residences)
-    .innerJoin(tables.students, eq(tables.residences.studentId, tables.students.id))
-    .leftJoin(tables.departments, eq(tables.students.departmentId, tables.departments.id))
-    .leftJoin(tables.schools, eq(tables.students.schoolId, tables.schools.id))
-    .where(
-      and(
-        eq(tables.residences.roomId, residence.roomId),
-        eq(tables.residences.residenceType, 'on-campus')
-      )
-    );
+      .from(tables.residences)
+      .innerJoin(tables.students, eq(tables.residences.studentId, tables.students.id))
+      .leftJoin(tables.departments, eq(tables.students.departmentId, tables.departments.id))
+      .leftJoin(tables.schools, eq(tables.students.schoolId, tables.schools.id))
+      .where(
+        and(
+          eq(tables.residences.roomId, residence.roomId),
+          eq(tables.residences.residenceType, 'on-campus')
+        )
+      );
 
     // Filter out the requesting student
     const roommatesList = roommates.filter(r => r.studentId !== studentId);
